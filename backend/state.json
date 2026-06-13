@@ -3,12 +3,14 @@
     "alice": {
       "accountId": "0.0.9225296",
       "privateKey": "45c1f1519f8e8dc2f52f58b1798cf3f00a3bf8567ad1f2e4d3fe7fb25b3e3efe",
-      "name": "Alice"
+      "name": "Alice",
+      "walletAddress": "0.0.9227049"
     },
     "bob": {
       "accountId": "0.0.9225297",
       "privateKey": "fd0b249cba16d3289d6f79e0bb9a5ea5567a904825fd8ef6036c54e6a85d46ef",
-      "name": "Bob"
+      "name": "Bob",
+      "walletAddress": ""
     }
   },
   "plans": {
@@ -533,6 +535,511 @@
       },
       "tokenId": "0.0.9225298",
       "planName": "Crypto Price Intelligence"
+    },
+    "ak_hlt2urpck0q": {
+      "accountId": {
+        "shard": {
+          "low": 0,
+          "high": 0,
+          "unsigned": false
+        },
+        "realm": {
+          "low": 0,
+          "high": 0,
+          "unsigned": false
+        },
+        "num": {
+          "low": 9225296,
+          "high": 0,
+          "unsigned": false
+        },
+        "aliasKey": null,
+        "evmAddress": null,
+        "_checksum": null
+      },
+      "privateKey": {
+        "_key": {
+          "_key": {
+            "_keyPair": {
+              "publicKey": {
+                "0": 37,
+                "1": 138,
+                "2": 177,
+                "3": 24,
+                "4": 54,
+                "5": 17,
+                "6": 253,
+                "7": 202,
+                "8": 148,
+                "9": 44,
+                "10": 143,
+                "11": 238,
+                "12": 245,
+                "13": 16,
+                "14": 213,
+                "15": 227,
+                "16": 210,
+                "17": 240,
+                "18": 74,
+                "19": 25,
+                "20": 164,
+                "21": 109,
+                "22": 144,
+                "23": 227,
+                "24": 84,
+                "25": 5,
+                "26": 107,
+                "27": 24,
+                "28": 103,
+                "29": 207,
+                "30": 119,
+                "31": 60
+              },
+              "secretKey": {
+                "0": 69,
+                "1": 193,
+                "2": 241,
+                "3": 81,
+                "4": 159,
+                "5": 142,
+                "6": 141,
+                "7": 194,
+                "8": 245,
+                "9": 47,
+                "10": 88,
+                "11": 177,
+                "12": 121,
+                "13": 140,
+                "14": 243,
+                "15": 240,
+                "16": 10,
+                "17": 59,
+                "18": 248,
+                "19": 86,
+                "20": 122,
+                "21": 209,
+                "22": 242,
+                "23": 228,
+                "24": 211,
+                "25": 254,
+                "26": 127,
+                "27": 178,
+                "28": 91,
+                "29": 62,
+                "30": 62,
+                "31": 254,
+                "32": 37,
+                "33": 138,
+                "34": 177,
+                "35": 24,
+                "36": 54,
+                "37": 17,
+                "38": 253,
+                "39": 202,
+                "40": 148,
+                "41": 44,
+                "42": 143,
+                "43": 238,
+                "44": 245,
+                "45": 16,
+                "46": 213,
+                "47": 227,
+                "48": 210,
+                "49": 240,
+                "50": 74,
+                "51": 25,
+                "52": 164,
+                "53": 109,
+                "54": 144,
+                "55": 227,
+                "56": 84,
+                "57": 5,
+                "58": 107,
+                "59": 24,
+                "60": 103,
+                "61": 207,
+                "62": 119,
+                "63": 60
+              }
+            },
+            "_chainCode": null
+          }
+        }
+      },
+      "tokenId": "0.0.9225298",
+      "planName": "Crypto Price Intelligence"
+    },
+    "ak_ic9vfliarbo": {
+      "accountId": {
+        "shard": {
+          "low": 0,
+          "high": 0,
+          "unsigned": false
+        },
+        "realm": {
+          "low": 0,
+          "high": 0,
+          "unsigned": false
+        },
+        "num": {
+          "low": 9225296,
+          "high": 0,
+          "unsigned": false
+        },
+        "aliasKey": null,
+        "evmAddress": null,
+        "_checksum": null
+      },
+      "privateKey": {
+        "_key": {
+          "_key": {
+            "_keyPair": {
+              "publicKey": {
+                "0": 37,
+                "1": 138,
+                "2": 177,
+                "3": 24,
+                "4": 54,
+                "5": 17,
+                "6": 253,
+                "7": 202,
+                "8": 148,
+                "9": 44,
+                "10": 143,
+                "11": 238,
+                "12": 245,
+                "13": 16,
+                "14": 213,
+                "15": 227,
+                "16": 210,
+                "17": 240,
+                "18": 74,
+                "19": 25,
+                "20": 164,
+                "21": 109,
+                "22": 144,
+                "23": 227,
+                "24": 84,
+                "25": 5,
+                "26": 107,
+                "27": 24,
+                "28": 103,
+                "29": 207,
+                "30": 119,
+                "31": 60
+              },
+              "secretKey": {
+                "0": 69,
+                "1": 193,
+                "2": 241,
+                "3": 81,
+                "4": 159,
+                "5": 142,
+                "6": 141,
+                "7": 194,
+                "8": 245,
+                "9": 47,
+                "10": 88,
+                "11": 177,
+                "12": 121,
+                "13": 140,
+                "14": 243,
+                "15": 240,
+                "16": 10,
+                "17": 59,
+                "18": 248,
+                "19": 86,
+                "20": 122,
+                "21": 209,
+                "22": 242,
+                "23": 228,
+                "24": 211,
+                "25": 254,
+                "26": 127,
+                "27": 178,
+                "28": 91,
+                "29": 62,
+                "30": 62,
+                "31": 254,
+                "32": 37,
+                "33": 138,
+                "34": 177,
+                "35": 24,
+                "36": 54,
+                "37": 17,
+                "38": 253,
+                "39": 202,
+                "40": 148,
+                "41": 44,
+                "42": 143,
+                "43": 238,
+                "44": 245,
+                "45": 16,
+                "46": 213,
+                "47": 227,
+                "48": 210,
+                "49": 240,
+                "50": 74,
+                "51": 25,
+                "52": 164,
+                "53": 109,
+                "54": 144,
+                "55": 227,
+                "56": 84,
+                "57": 5,
+                "58": 107,
+                "59": 24,
+                "60": 103,
+                "61": 207,
+                "62": 119,
+                "63": 60
+              }
+            },
+            "_chainCode": null
+          }
+        }
+      },
+      "tokenId": "0.0.9225298",
+      "planName": "Crypto Price Intelligence"
+    },
+    "ak_zibygguo8e9": {
+      "accountId": {
+        "shard": {
+          "low": 0,
+          "high": 0,
+          "unsigned": false
+        },
+        "realm": {
+          "low": 0,
+          "high": 0,
+          "unsigned": false
+        },
+        "num": {
+          "low": 9225296,
+          "high": 0,
+          "unsigned": false
+        },
+        "aliasKey": null,
+        "evmAddress": null,
+        "_checksum": null
+      },
+      "privateKey": {
+        "_key": {
+          "_key": {
+            "_keyPair": {
+              "publicKey": {
+                "0": 37,
+                "1": 138,
+                "2": 177,
+                "3": 24,
+                "4": 54,
+                "5": 17,
+                "6": 253,
+                "7": 202,
+                "8": 148,
+                "9": 44,
+                "10": 143,
+                "11": 238,
+                "12": 245,
+                "13": 16,
+                "14": 213,
+                "15": 227,
+                "16": 210,
+                "17": 240,
+                "18": 74,
+                "19": 25,
+                "20": 164,
+                "21": 109,
+                "22": 144,
+                "23": 227,
+                "24": 84,
+                "25": 5,
+                "26": 107,
+                "27": 24,
+                "28": 103,
+                "29": 207,
+                "30": 119,
+                "31": 60
+              },
+              "secretKey": {
+                "0": 69,
+                "1": 193,
+                "2": 241,
+                "3": 81,
+                "4": 159,
+                "5": 142,
+                "6": 141,
+                "7": 194,
+                "8": 245,
+                "9": 47,
+                "10": 88,
+                "11": 177,
+                "12": 121,
+                "13": 140,
+                "14": 243,
+                "15": 240,
+                "16": 10,
+                "17": 59,
+                "18": 248,
+                "19": 86,
+                "20": 122,
+                "21": 209,
+                "22": 242,
+                "23": 228,
+                "24": 211,
+                "25": 254,
+                "26": 127,
+                "27": 178,
+                "28": 91,
+                "29": 62,
+                "30": 62,
+                "31": 254,
+                "32": 37,
+                "33": 138,
+                "34": 177,
+                "35": 24,
+                "36": 54,
+                "37": 17,
+                "38": 253,
+                "39": 202,
+                "40": 148,
+                "41": 44,
+                "42": 143,
+                "43": 238,
+                "44": 245,
+                "45": 16,
+                "46": 213,
+                "47": 227,
+                "48": 210,
+                "49": 240,
+                "50": 74,
+                "51": 25,
+                "52": 164,
+                "53": 109,
+                "54": 144,
+                "55": 227,
+                "56": 84,
+                "57": 5,
+                "58": 107,
+                "59": 24,
+                "60": 103,
+                "61": 207,
+                "62": 119,
+                "63": 60
+              }
+            },
+            "_chainCode": null
+          }
+        }
+      },
+      "tokenId": "0.0.9225298",
+      "planName": "Crypto Price Intelligence"
+    },
+    "ak_g2n1lucfl2p": {
+      "accountId": "0.0.9225296",
+      "privateKey": "45c1f1519f8e8dc2f52f58b1798cf3f00a3bf8567ad1f2e4d3fe7fb25b3e3efe",
+      "walletAccountId": "0.0.9226336",
+      "tokenId": "0.0.9225298",
+      "planName": "Crypto Price Intelligence"
+    },
+    "ak_y0sll0fwcuf": {
+      "accountId": "0.0.9225296",
+      "privateKey": "45c1f1519f8e8dc2f52f58b1798cf3f00a3bf8567ad1f2e4d3fe7fb25b3e3efe",
+      "walletAccountId": "0.0.9226336",
+      "tokenId": "0.0.9225298",
+      "planName": "Crypto Price Intelligence"
+    },
+    "ak_l1k6nw66j": {
+      "accountId": "0.0.9225296",
+      "privateKey": "45c1f1519f8e8dc2f52f58b1798cf3f00a3bf8567ad1f2e4d3fe7fb25b3e3efe",
+      "walletAccountId": "0.0.9226336",
+      "tokenId": "0.0.9225298",
+      "planName": "Crypto Price Intelligence"
+    },
+    "ak_fuihui5nz2w": {
+      "accountId": "0.0.9225296",
+      "privateKey": "45c1f1519f8e8dc2f52f58b1798cf3f00a3bf8567ad1f2e4d3fe7fb25b3e3efe",
+      "walletAccountId": "0.0.9226336",
+      "tokenId": "0.0.9225299",
+      "planName": "Weather Intelligence API"
+    },
+    "ak_pk580i70qy": {
+      "accountId": "0.0.9225296",
+      "privateKey": "45c1f1519f8e8dc2f52f58b1798cf3f00a3bf8567ad1f2e4d3fe7fb25b3e3efe",
+      "walletAccountId": "0.0.9227049",
+      "tokenId": "0.0.9225298",
+      "planName": "Crypto Price Intelligence"
     }
-  }
+  },
+  "walletProfiles": {
+    "0.0.9226336": {
+      "accountId": "0.0.9226336",
+      "tokenBalances": {
+        "0.0.9225298": 1,
+        "0.0.9225299": 1
+      },
+      "apiKeys": {
+        "0.0.9225298": {
+          "apiKey": "ak_l1k6nw66j",
+          "service": "Crypto Price Intelligence",
+          "endpoint": "http://localhost:3001/v1/call",
+          "method": "POST",
+          "headers": {
+            "Authorization": "Bearer ak_l1k6nw66j",
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "query": "bitcoin"
+          },
+          "example_curl": "curl -X POST http://localhost:3001/v1/call -H \"Authorization: Bearer ak_l1k6nw66j\" -H \"Content-Type: application/json\" -d '{\"query\":\"bitcoin\"}'"
+        },
+        "0.0.9225299": {
+          "apiKey": "ak_fuihui5nz2w",
+          "service": "Weather Intelligence API",
+          "endpoint": "http://localhost:3001/v1/call",
+          "method": "POST",
+          "headers": {
+            "Authorization": "Bearer ak_fuihui5nz2w",
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "query": "London"
+          },
+          "example_curl": "curl -X POST http://localhost:3001/v1/call -H \"Authorization: Bearer ak_fuihui5nz2w\" -H \"Content-Type: application/json\" -d '{\"query\":\"London\"}'"
+        }
+      },
+      "createdAt": "2026-06-13T21:56:49.694Z",
+      "updatedAt": "2026-06-13T22:41:46.690Z"
+    },
+    "0.0.9227049": {
+      "accountId": "0.0.9227049",
+      "tokenBalances": {
+        "0.0.9225298": 0
+      },
+      "apiKeys": {
+        "0.0.9225298": {
+          "key": "ak_pk580i70qy",
+          "endpoint": "http://localhost:3001/v1/call",
+          "usage": "Authorization: Bearer ak_pk580i70qy"
+        }
+      },
+      "createdAt": "2026-06-13T23:28:44.245Z",
+      "updatedAt": "2026-06-13T23:29:59.555Z"
+    }
+  },
+  "secondaryListings": [
+    {
+      "id": 1,
+      "seller": "0.0.9225296",
+      "tokenId": "0.0.9225298",
+      "amount": 1,
+      "pricePerTokenHbar": 0.07,
+      "active": false,
+      "createdAt": "2026-06-13T22:41:44.638Z",
+      "symbol": "CRYPTO",
+      "retailPrice": 0.1,
+      "ensName": "cryptointel.eth",
+      "walletAccountId": "0.0.9226336"
+    }
+  ]
 }

@@ -7,6 +7,7 @@ import express from "express";
 import cors from "cors";
 import {
   AccountCreateTransaction,
+  AccountInfoFlow,
   Hbar,
   PrivateKey,
   AccountId,
@@ -27,6 +28,7 @@ import {
 import dotenv from "dotenv";
 import { signRequest } from "@worldcoin/idkit-core/signing";
 import fs from "fs";
+import crypto from "crypto";
 
 dotenv.config();
 
@@ -41,14 +43,22 @@ let demoUser = null; // simulated user account
 let plans = {};
 const apiKeys = {};
 const users = {};
+let walletProfiles = {};
+let secondaryListings = [];
+const walletAuthChallenges = new Map();
+const walletSessions = new Map();
 
 const STATE_FILE = "./state.json";
+const AUTH_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+const WALLET_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 function saveState() {
   const state = {
     users: {},
     plans,
     apiKeys,
+    walletProfiles,
+    secondaryListings,
   };
   // Save user accounts (including private keys for demo only)
   for (const [key, user] of Object.entries(users)) {
@@ -56,9 +66,103 @@ function saveState() {
       accountId: user.accountId.toString(),
       privateKey: user.privateKey.toStringRaw(),
       name: user.name,
+      walletAddress: user.walletAddress || "",
     };
   }
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+}
+
+function getBearerToken(req) {
+  const authHeader = req.headers.authorization || "";
+  if (authHeader.startsWith("Bearer ")) return authHeader.slice(7);
+  return req.headers["x-wallet-session"] || "";
+}
+
+function getSessionWalletAccountId(req) {
+  const token = getBearerToken(req);
+  if (!token) return "";
+
+  const session = walletSessions.get(token);
+  if (!session) return "";
+
+  if (session.expiresAt <= Date.now()) {
+    walletSessions.delete(token);
+    return "";
+  }
+
+  return session.accountId;
+}
+
+function getWalletAccountId(req) {
+  return getSessionWalletAccountId(req);
+}
+
+function requireWalletAccountId(req, res) {
+  const walletAccountId = getWalletAccountId(req);
+  if (!walletAccountId) {
+    res.status(401).json({
+      error: "WALLET_AUTH_REQUIRED",
+      message:
+        "Connect and authenticate your wallet before buying, redeeming, listing, or purchasing tokens.",
+    });
+    return null;
+  }
+  return walletAccountId;
+}
+
+function buildWalletAuthMessage(accountId, nonce, issuedAt) {
+  return [
+    "AccessMint wallet authentication",
+    "",
+    `Wallet: ${accountId}`,
+    `Nonce: ${nonce}`,
+    `Issued At: ${issuedAt}`,
+    "Network: Hedera Testnet",
+    "",
+    "Only sign this message if you are logging into AccessMint.",
+  ].join("\n");
+}
+
+function prefixHederaMessage(message) {
+  return `\x19Hedera Signed Message:\n${message.length}${message}`;
+}
+
+function ensureWalletProfile(walletAccountId) {
+  const id = walletAccountId || "demo";
+  if (!walletProfiles[id]) {
+    walletProfiles[id] = {
+      accountId: id,
+      tokenBalances: {},
+      apiKeys: {},
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+  return walletProfiles[id];
+}
+
+function updateWalletBalance(walletAccountId, tokenId, delta) {
+  const profile = ensureWalletProfile(walletAccountId);
+  const current = Number(profile.tokenBalances[tokenId] || 0);
+  profile.tokenBalances[tokenId] = Math.max(0, current + delta);
+  profile.updatedAt = new Date().toISOString();
+  return profile.tokenBalances[tokenId];
+}
+
+function setWalletApiKey(walletAccountId, tokenId, keyInfo) {
+  const profile = ensureWalletProfile(walletAccountId);
+  profile.apiKeys[tokenId] = keyInfo;
+  profile.updatedAt = new Date().toISOString();
+}
+
+function getWalletState(walletAccountId) {
+  const profile = ensureWalletProfile(walletAccountId);
+  return {
+    accountId: profile.accountId,
+    userTokens: profile.tokenBalances || {},
+    apiKeys: profile.apiKeys || {},
+    updatedAt: profile.updatedAt,
+  };
 }
 
 function loadState() {
@@ -100,6 +204,8 @@ async function init() {
     demoUser = users["alice"];
     Object.assign(plans, saved.plans || {});
     Object.assign(apiKeys, saved.apiKeys || {});
+    walletProfiles = saved.walletProfiles || {};
+    secondaryListings = saved.secondaryListings || [];
 
     console.log(`   ✅ Alice: ${users["alice"].accountId}`);
     console.log(`   ✅ Bob: ${users["bob"].accountId}`);
@@ -192,10 +298,187 @@ app.get("/api/plans", (req, res) => {
   res.json(Object.values(plans));
 });
 
+app.post("/api/auth/nonce", (req, res) => {
+  const accountId = String(req.body?.accountId || "").trim();
+  if (!accountId) {
+    return res.status(400).json({
+      error: "ACCOUNT_REQUIRED",
+      message: "Connect a Hedera wallet before authenticating.",
+    });
+  }
+
+  const nonce = crypto.randomBytes(24).toString("hex");
+  const issuedAt = new Date().toISOString();
+  const message = buildWalletAuthMessage(accountId, nonce, issuedAt);
+
+  walletAuthChallenges.set(nonce, {
+    accountId,
+    message,
+    expiresAt: Date.now() + AUTH_CHALLENGE_TTL_MS,
+  });
+
+  res.json({
+    accountId,
+    nonce,
+    message,
+    expiresAt: Date.now() + AUTH_CHALLENGE_TTL_MS,
+  });
+});
+
+app.post("/api/auth/verify", async (req, res) => {
+  try {
+    const accountId = String(req.body?.accountId || "").trim();
+    const nonce = String(req.body?.nonce || "").trim();
+    const signature = String(req.body?.signature || "").trim();
+    const challenge = walletAuthChallenges.get(nonce);
+
+    if (!accountId || !nonce || !signature || !challenge) {
+      return res.status(400).json({
+        error: "INVALID_AUTH_CHALLENGE",
+        message: "Wallet authentication challenge is missing or expired.",
+      });
+    }
+
+    if (challenge.expiresAt <= Date.now()) {
+      walletAuthChallenges.delete(nonce);
+      return res.status(400).json({
+        error: "AUTH_CHALLENGE_EXPIRED",
+        message: "Wallet authentication challenge expired. Try connecting again.",
+      });
+    }
+
+    if (challenge.accountId !== accountId) {
+      return res.status(401).json({
+        error: "ACCOUNT_MISMATCH",
+        message: "Signed wallet account does not match the requested account.",
+      });
+    }
+
+    const { client } = getClient();
+    const messageBytes = Buffer.from(prefixHederaMessage(challenge.message));
+    const signatureBytes = Buffer.from(signature, "base64");
+    const verified = await AccountInfoFlow.verifySignature(
+      client,
+      accountId,
+      messageBytes,
+      signatureBytes,
+    );
+
+    if (!verified) {
+      return res.status(401).json({
+        error: "INVALID_WALLET_SIGNATURE",
+        message: "Wallet signature could not be verified on Hedera.",
+      });
+    }
+
+    walletAuthChallenges.delete(nonce);
+
+    if (users["alice"]) {
+      demoUser = users["alice"];
+      demoUser.walletAddress = accountId;
+    }
+
+    ensureWalletProfile(accountId);
+    saveState();
+
+    const sessionToken = crypto.randomBytes(32).toString("hex");
+    const expiresAt = Date.now() + WALLET_SESSION_TTL_MS;
+    walletSessions.set(sessionToken, { accountId, expiresAt });
+
+    res.json({
+      authenticated: true,
+      accountId,
+      sessionToken,
+      expiresAt,
+      walletState: getWalletState(accountId),
+      listings: secondaryListings,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      error: "WALLET_AUTH_FAILED",
+      message: err.message,
+    });
+  }
+});
+
+app.post("/api/auth/walletconnect-session", (req, res) => {
+  const accountId = String(req.body?.accountId || "").trim();
+  if (!accountId) {
+    return res.status(400).json({
+      error: "ACCOUNT_REQUIRED",
+      message: "Connect a Hedera wallet before authenticating.",
+    });
+  }
+
+  if (users["alice"]) {
+    demoUser = users["alice"];
+    demoUser.walletAddress = accountId;
+  }
+
+  ensureWalletProfile(accountId);
+  saveState();
+
+  const sessionToken = crypto.randomBytes(32).toString("hex");
+  const expiresAt = Date.now() + WALLET_SESSION_TTL_MS;
+  walletSessions.set(sessionToken, {
+    accountId,
+    expiresAt,
+    authMethod: "walletconnect-session",
+  });
+
+  res.json({
+    authenticated: true,
+    authMethod: "walletconnect-session",
+    accountId,
+    sessionToken,
+    expiresAt,
+    walletState: getWalletState(accountId),
+    listings: secondaryListings,
+  });
+});
+
+app.get("/api/auth/session", (req, res) => {
+  const accountId = getSessionWalletAccountId(req);
+  if (!accountId) {
+    return res.status(401).json({
+      error: "SESSION_EXPIRED",
+      message: "Wallet session expired. Sign in with your wallet again.",
+    });
+  }
+
+  res.json({
+    authenticated: true,
+    accountId,
+    walletState: getWalletState(accountId),
+    listings: secondaryListings,
+  });
+});
+
+app.get("/api/wallet-state", (req, res) => {
+  const walletAccountId = getWalletAccountId(req);
+  if (!walletAccountId) {
+    return res.status(401).json({
+      error: "SESSION_REQUIRED",
+      message: "Authenticate your wallet to load wallet-owned API access.",
+    });
+  }
+  res.json({
+    ...getWalletState(walletAccountId),
+    listings: secondaryListings,
+  });
+});
+
+app.get("/api/listings", (req, res) => {
+  res.json(secondaryListings);
+});
+
 // POST /api/buy — Buy tokens from provider
 app.post("/api/buy", async (req, res) => {
   try {
     const { tokenId, amount, pricePerTokenHbar } = req.body;
+    const walletAccountId = requireWalletAccountId(req, res);
+    if (!walletAccountId) return;
     const { accountId: providerAccountId } = getClient();
 
     // Associate user with token (ignore error if already associated)
@@ -214,8 +497,9 @@ app.post("/api/buy", async (req, res) => {
       pricePerTokenHbar,
     });
 
-    res.json(result);
+    updateWalletBalance(walletAccountId, tokenId, Number(amount));
     saveState();
+    res.json({ ...result, walletState: getWalletState(walletAccountId) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -227,6 +511,14 @@ app.post("/api/list", async (req, res) => {
   try {
     const { tokenId, symbol, amount, pricePerTokenHbar, retailPrice } =
       req.body;
+    const walletAccountId = requireWalletAccountId(req, res);
+    if (!walletAccountId) return;
+    const profile = ensureWalletProfile(walletAccountId);
+    const balance = Number(profile.tokenBalances[tokenId] || 0);
+
+    if (balance < Number(amount)) {
+      return res.status(400).json({ error: "Not enough tokens to list" });
+    }
 
     const listing = await listForSale({
       sellerAccountId: demoUser.accountId,
@@ -239,7 +531,11 @@ app.post("/api/list", async (req, res) => {
     listing.symbol = symbol;
     listing.retailPrice = retailPrice;
     listing.ensName = plans[tokenId]?.ensName || req.body.ensName || "";
-    res.json(listing);
+    listing.walletAccountId = walletAccountId;
+    secondaryListings.push(listing);
+    updateWalletBalance(walletAccountId, tokenId, -Number(amount));
+    saveState();
+    res.json({ ...listing, walletState: getWalletState(walletAccountId) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -249,7 +545,9 @@ app.post("/api/list", async (req, res) => {
 // POST /api/marketplace/buy — Buy from marketplace
 app.post("/api/marketplace/buy", async (req, res) => {
   try {
-    const { listingId } = req.body;
+    const { listingId, tokenId: requestTokenId } = req.body;
+    const walletAccountId = requireWalletAccountId(req, res);
+    if (!walletAccountId) return;
     const buyer = demoUser;
 
     try {
@@ -273,11 +571,15 @@ app.post("/api/marketplace/buy", async (req, res) => {
     });
 
     // Generate API key for the buyer
-    const tokenId = Object.keys(plans)[0];
+    const localListing = secondaryListings.find(
+      (listing) => listing.id === listingId,
+    );
+    const tokenId = requestTokenId || localListing?.tokenId || Object.keys(plans)[0];
     const apiKey = "ak_" + Math.random().toString(36).slice(2, 15);
     apiKeys[apiKey] = {
-      accountId: buyer.accountId,
-      privateKey: buyer.privateKey,
+      accountId: buyer.accountId.toString(),
+      privateKey: buyer.privateKey.toStringRaw(),
+      walletAccountId,
       tokenId,
       planName: plans[tokenId]?.name || "Unknown",
     };
@@ -287,6 +589,13 @@ app.post("/api/marketplace/buy", async (req, res) => {
       endpoint: "http://localhost:3001/v1/call",
       usage: "Authorization: Bearer " + apiKey,
     };
+    setWalletApiKey(walletAccountId, tokenId, result.apiKeyInfo);
+    updateWalletBalance(walletAccountId, tokenId, Number(result.amount || 0));
+    secondaryListings = secondaryListings.map((listing) =>
+      listing.id === listingId ? { ...listing, active: false } : listing,
+    );
+    result.walletState = getWalletState(walletAccountId);
+    result.listings = secondaryListings;
 
     console.log(`   🔑 API key for ${buyer.name}: ${apiKey}`);
 
@@ -332,7 +641,7 @@ app.post("/api/marketplace/buy", async (req, res) => {
 //   }
 // });
 
-app.post("/api/verify-worldid", async (req, res) => {
+app.post("/api/verify-worldid-demo-disabled", async (req, res) => {
   try {
     console.log("✅ World ID verification received");
     // For hackathon demo: accept the proof
@@ -390,6 +699,15 @@ app.post("/api/verify-worldid", async (req, res) => {
 app.post("/api/redeem", async (req, res) => {
   try {
     const { tokenId, query } = req.body;
+    const walletAccountId = requireWalletAccountId(req, res);
+    if (!walletAccountId) return;
+    const profile = ensureWalletProfile(walletAccountId);
+    const profileBalance = Number(profile.tokenBalances[tokenId] || 0);
+
+    if (profileBalance <= 0) {
+      return res.status(403).json({ error: "No tokens remaining" });
+    }
+
     const { accountId: providerAccountId } = getClient();
 
     // Step 1: Burn the token on Hedera
@@ -466,7 +784,7 @@ app.post("/api/redeem", async (req, res) => {
       apiData = { message: "No API endpoint registered for this plan" };
     }
 
-    const newBalance = await getTokenBalance(demoUser.accountId, tokenId);
+    const newBalance = updateWalletBalance(walletAccountId, tokenId, -1);
 
     result.apiResponse = {
       service: plan.name,
@@ -479,6 +797,8 @@ app.post("/api/redeem", async (req, res) => {
       timestamp: new Date().toISOString(),
     };
 
+    result.walletState = getWalletState(walletAccountId);
+    saveState();
     res.json(result);
   } catch (err) {
     console.error(err);
@@ -489,19 +809,29 @@ app.post("/api/redeem", async (req, res) => {
 // Generate API key after buying tokens
 app.post("/api/generate-key", async (req, res) => {
   const { tokenId } = req.body;
+  const walletAccountId = requireWalletAccountId(req, res);
+  if (!walletAccountId) return;
+  const profile = ensureWalletProfile(walletAccountId);
+  if (Number(profile.tokenBalances[tokenId] || 0) <= 0) {
+    return res.status(403).json({
+      error: "NO_TOKENS_FOR_KEY",
+      message: "Buy tokens for this API before generating an API key.",
+    });
+  }
   const plan = plans[tokenId];
   const apiKey = "ak_" + Math.random().toString(36).slice(2, 15);
 
   apiKeys[apiKey] = {
-    accountId: demoUser.accountId,
-    privateKey: demoUser.privateKey,
+    accountId: demoUser.accountId.toString(),
+    privateKey: demoUser.privateKey.toStringRaw(),
+    walletAccountId,
     tokenId,
     planName: plan?.name || "Unknown",
   };
 
   console.log(`   🔑 API key generated: ${apiKey} → ${plan?.name}`);
 
-  res.json({
+  const keyInfo = {
     apiKey,
     service: plan?.name,
     endpoint: `http://localhost:3001/v1/call`,
@@ -512,8 +842,11 @@ app.post("/api/generate-key", async (req, res) => {
     },
     body: { query: "bitcoin" },
     example_curl: `curl -X POST http://localhost:3001/v1/call -H "Authorization: Bearer ${apiKey}" -H "Content-Type: application/json" -d '{"query":"bitcoin"}'`,
-  });
+  };
+
+  setWalletApiKey(walletAccountId, tokenId, keyInfo);
   saveState();
+  res.json({ ...keyInfo, walletState: getWalletState(walletAccountId) });
 });
 
 app.post("/api/switch-user", (req, res) => {
@@ -529,6 +862,15 @@ app.post("/api/switch-user", (req, res) => {
 
 app.get("/api/current-user", (req, res) => {
   res.json({ name: demoUser.name, accountId: demoUser.accountId.toString() });
+});
+
+app.post("/api/wallet-connected", async (req, res) => {
+  const { accountId } = req.body;
+  console.log(`   Wallet connected without auth proof: ${accountId}`);
+  res.status(401).json({
+    error: "WALLET_AUTH_REQUIRED",
+    message: "Use /api/auth/nonce and /api/auth/verify before wallet state is attached.",
+  });
 });
 
 // The actual API endpoint — called from Postman or user's code
@@ -644,7 +986,10 @@ app.post("/v1/call", async (req, res) => {
     }
   }
 
-  const newBalance = await getTokenBalance(keyData.accountId, keyData.tokenId);
+  const newBalance = keyData.walletAccountId
+    ? updateWalletBalance(keyData.walletAccountId, keyData.tokenId, -1)
+    : await getTokenBalance(keyData.accountId, keyData.tokenId);
+  if (keyData.walletAccountId) saveState();
 
   res.json({
     service: plan?.name,
@@ -654,6 +999,31 @@ app.post("/v1/call", async (req, res) => {
     token_burned_on_chain: true,
     verify: `https://hashscan.io/testnet/topic/${redemptionTopicId}`,
     timestamp: new Date().toISOString(),
+  });
+});
+
+app.post("/api/wallet-connected-legacy-disabled", async (req, res) => {
+  const { accountId } = req.body;
+  console.log(`   🔗 Wallet connected: ${accountId}`);
+
+  // Map connected wallet to a demo account
+  // In production, this would use the wallet's own signer
+  if (!users["alice"]) {
+    // No demo accounts exist, use the wallet directly
+    demoUser = {
+      accountId: AccountId.fromString(accountId),
+      name: accountId,
+    };
+  } else {
+    // For demo, associate wallet with Alice's account
+    demoUser = users["alice"];
+    demoUser.walletAddress = accountId;
+  }
+
+  res.json({
+    connected: true,
+    accountId: demoUser.accountId.toString(),
+    name: demoUser.name,
   });
 });
 

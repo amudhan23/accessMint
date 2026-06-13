@@ -13,6 +13,8 @@ import ProviderPage from "./pages/ProviderPage";
 import UserPage from "./pages/UserPage";
 import MarketplacePage from "./pages/MarketplacePage";
 import ActivityLog from "./components/ActivityLog";
+import { WalletButton } from "./components/WalletConnect";
+import { useWallet } from "./components/walletContext";
 
 const tabs = [
   { id: "explore", label: "Explore", icon: Layers3 },
@@ -22,13 +24,13 @@ const tabs = [
 ];
 
 export default function App() {
+  const { accountId, authToken, isConnected } = useWallet();
   const [activeTab, setActiveTab] = useState("explore");
   const [plans, setPlans] = useState([]);
   const [userTokens, setUserTokens] = useState({});
   const [apiKeys, setApiKeys] = useState({});
   const [listings, setListings] = useState([]);
   const [activity, setActivity] = useState([]);
-  const [currentUser, setCurrentUser] = useState("Alice");
 
   useEffect(() => {
     fetch("/api/plans")
@@ -39,23 +41,46 @@ export default function App() {
       .catch(console.error);
   }, []);
 
+  useEffect(() => {
+    fetch("/api/listings")
+      .then((response) => response.json())
+      .then((data) => {
+        if (Array.isArray(data)) setListings(data);
+      })
+      .catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    if (!isConnected || !accountId || !authToken) {
+      return;
+    }
+
+    fetch("/api/wallet-state", {
+      headers: { Authorization: `Bearer ${authToken}` },
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        setUserTokens(data.userTokens || {});
+        setApiKeys(data.apiKeys || {});
+        if (Array.isArray(data.listings)) setListings(data.listings);
+      })
+      .catch(console.error);
+  }, [accountId, authToken, isConnected]);
+
+  useEffect(() => {
+    if (isConnected && accountId) return;
+    const reset = window.setTimeout(() => {
+      setUserTokens({});
+      setApiKeys({});
+    }, 0);
+    return () => window.clearTimeout(reset);
+  }, [accountId, isConnected]);
+
   const addActivity = (entry) => {
     setActivity((prev) => [
       { ...entry, id: Date.now(), time: new Date().toLocaleTimeString() },
       ...prev,
     ]);
-  };
-
-  const switchUser = async (userId) => {
-    const res = await fetch("/api/switch-user", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
-    });
-    const data = await res.json();
-    setCurrentUser(data.name);
-    setUserTokens({});
-    setApiKeys({});
   };
 
   return (
@@ -68,31 +93,21 @@ export default function App() {
                 <Coins className="h-5 w-5 text-emerald-300" />
               </div>
               <div>
-                <h1 className="text-xl font-semibold tracking-tight">AccessMint</h1>
-                <p className="text-xs text-gray-500">Tokenized API Access on Hedera</p>
+                <h1 className="text-xl font-semibold tracking-tight">
+                  AccessMint
+                </h1>
+                <p className="text-xs text-gray-500">
+                  Tokenized API Access on Hedera
+                </p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex rounded-2xl border border-gray-800 bg-gray-900 p-1">
-                {["Alice", "Bob"].map((name) => (
-                  <button
-                    key={name}
-                    onClick={() => switchUser(name.toLowerCase())}
-                    className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
-                      currentUser === name
-                        ? "bg-blue-600 text-white shadow-lg shadow-blue-950"
-                        : "text-gray-400 hover:text-white"
-                    }`}
-                  >
-                    {name}
-                  </button>
-                ))}
-              </div>
               <span className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
                 <BadgeCheck className="h-4 w-4" />
                 Testnet
               </span>
+              <WalletButton />
             </div>
           </div>
 
@@ -124,6 +139,8 @@ export default function App() {
               setUserTokens={setUserTokens}
               apiKeys={apiKeys}
               setApiKeys={setApiKeys}
+              walletAccountId={accountId?.toString()}
+              walletAuthToken={authToken}
               addActivity={addActivity}
             />
           )}
@@ -134,6 +151,8 @@ export default function App() {
               setUserTokens={setUserTokens}
               apiKeys={apiKeys}
               setApiKeys={setApiKeys}
+              walletAccountId={accountId?.toString()}
+              walletAuthToken={authToken}
               setListings={setListings}
               addActivity={addActivity}
             />
@@ -144,11 +163,16 @@ export default function App() {
               setListings={setListings}
               setUserTokens={setUserTokens}
               setApiKeys={setApiKeys}
+              walletAuthToken={authToken}
               addActivity={addActivity}
             />
           )}
           {activeTab === "provider" && (
-            <ProviderPage plans={plans} setPlans={setPlans} addActivity={addActivity} />
+            <ProviderPage
+              plans={plans}
+              setPlans={setPlans}
+              addActivity={addActivity}
+            />
           )}
         </section>
 

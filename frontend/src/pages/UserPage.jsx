@@ -59,6 +59,8 @@ export default function UserPage({
   setUserTokens,
   apiKeys,
   setApiKeys,
+  walletAccountId,
+  walletAuthToken,
   setListings,
   addActivity,
 }) {
@@ -68,6 +70,7 @@ export default function UserPage({
   const [sellPlan, setSellPlan] = useState(null);
   const [sellAmount, setSellAmount] = useState(1);
   const [sellPrice, setSellPrice] = useState(0.07);
+  const [error, setError] = useState("");
 
   const purchasedPlans = useMemo(
     () => plans.filter((plan) => (userTokens[plan.tokenId] || 0) > 0),
@@ -75,37 +78,55 @@ export default function UserPage({
   );
 
   const ensureApiKey = async (plan) => {
+    if (!walletAuthToken) throw new Error("Connect and sign with your wallet first");
     if (apiKeys[plan.tokenId]) return apiKeys[plan.tokenId];
 
     const keyRes = await fetch("/api/generate-key", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${walletAuthToken}`,
+      },
       body: JSON.stringify({ tokenId: plan.tokenId }),
     });
     const keyData = await keyRes.json();
+    if (!keyRes.ok) {
+      throw new Error(keyData.message || keyData.error || "API key generation failed");
+    }
     setApiKeys((prev) => ({ ...prev, [plan.tokenId]: keyData }));
+    if (keyData.walletState) {
+      setUserTokens(keyData.walletState.userTokens || {});
+      setApiKeys(keyData.walletState.apiKeys || {});
+    }
     return keyData;
   };
 
   const redeemToken = async (plan) => {
     const query = queryByToken[plan.tokenId]?.trim();
     const balance = userTokens[plan.tokenId] || 0;
-    if (!query || balance <= 0) return;
+    if (!walletAuthToken || !query || balance <= 0) return;
 
     setLoading(`redeem-${plan.tokenId}`);
+    setError("");
     try {
       await ensureApiKey(plan);
       const res = await fetch("/api/redeem", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${walletAuthToken}`,
+        },
         body: JSON.stringify({ tokenId: plan.tokenId, query }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || data.error || "API call failed");
+      }
       setResponseByToken((prev) => ({ ...prev, [plan.tokenId]: data.apiResponse }));
-      setUserTokens((prev) => ({
-        ...prev,
-        [plan.tokenId]: Math.max(0, (prev[plan.tokenId] || 0) - 1),
-      }));
+      if (data.walletState) {
+        setUserTokens(data.walletState.userTokens || {});
+        setApiKeys(data.walletState.apiKeys || {});
+      }
       addActivity({
         type: "redeem",
         message: `Used 1 ${plan.symbol} token for ${plan.name}`,
@@ -113,6 +134,7 @@ export default function UserPage({
       });
     } catch (err) {
       console.error(err);
+      setError(err.message || "API call failed");
     }
     setLoading(null);
   };
@@ -126,13 +148,17 @@ export default function UserPage({
   const listForSale = async () => {
     if (!sellPlan) return;
     const balance = userTokens[sellPlan.tokenId] || 0;
-    if (sellAmount < 1 || balance < sellAmount) return;
+    if (!walletAuthToken || sellAmount < 1 || balance < sellAmount) return;
 
     setLoading("list");
+    setError("");
     try {
       const res = await fetch("/api/list", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${walletAuthToken}`,
+        },
         body: JSON.stringify({
           tokenId: sellPlan.tokenId,
           symbol: sellPlan.symbol,
@@ -143,11 +169,14 @@ export default function UserPage({
         }),
       });
       const listing = await res.json();
+      if (!res.ok) {
+        throw new Error(listing.message || listing.error || "Listing failed");
+      }
       setListings((prev) => [...prev, listing]);
-      setUserTokens((prev) => ({
-        ...prev,
-        [sellPlan.tokenId]: Math.max(0, (prev[sellPlan.tokenId] || 0) - sellAmount),
-      }));
+      if (listing.walletState) {
+        setUserTokens(listing.walletState.userTokens || {});
+        setApiKeys(listing.walletState.apiKeys || {});
+      }
       const discount = ((1 - sellPrice / sellPlan.pricePerTokenHbar) * 100).toFixed(0);
       addActivity({
         type: "list",
@@ -157,6 +186,7 @@ export default function UserPage({
       setSellPlan(null);
     } catch (err) {
       console.error(err);
+      setError(err.message || "Listing failed");
     }
     setLoading(null);
   };
@@ -171,12 +201,20 @@ export default function UserPage({
         <p className="mt-1 text-sm text-gray-400">Manage your purchased API access.</p>
       </div>
 
+      {error && (
+        <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          {error}
+        </div>
+      )}
+
       {purchasedPlans.length === 0 ? (
         <div className="rounded-2xl border border-gray-800 bg-gray-900/70 p-10 text-center">
           <PackageOpen className="mx-auto h-12 w-12 text-gray-700" />
           <h3 className="mt-4 text-lg font-semibold text-white">No API tokens yet</h3>
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-500">
-            You have not purchased any API access yet. Browse the Explore tab to get started.
+            {walletAccountId
+              ? "You have not purchased any API access yet. Browse the Explore tab to get started."
+              : "Connect your wallet to load purchased API access."}
           </p>
         </div>
       ) : (
@@ -235,7 +273,7 @@ export default function UserPage({
                       />
                       <button
                         onClick={() => redeemToken(plan)}
-                        disabled={loading === `redeem-${plan.tokenId}` || balance <= 0 || !query.trim()}
+                        disabled={!walletAuthToken || loading === `redeem-${plan.tokenId}` || balance <= 0 || !query.trim()}
                         className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 text-sm font-semibold text-white transition hover:bg-orange-500 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {loading === `redeem-${plan.tokenId}` && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -346,7 +384,7 @@ export default function UserPage({
               </button>
               <button
                 onClick={listForSale}
-                disabled={loading === "list"}
+                disabled={!walletAuthToken || loading === "list"}
                 className="inline-flex h-11 items-center gap-2 rounded-xl bg-purple-600 px-4 text-sm font-semibold text-white transition hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {loading === "list" && <Loader2 className="h-4 w-4 animate-spin" />}

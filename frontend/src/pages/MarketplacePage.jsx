@@ -17,10 +17,12 @@ export default function MarketplacePage({
   setListings,
   setUserTokens,
   setApiKeys,
+  walletAuthToken,
   addActivity,
 }) {
   const [loading, setLoading] = useState(null);
   const [newApiKey, setNewApiKey] = useState(null);
+  const [error, setError] = useState("");
 
   const activeListings = useMemo(() => listings.filter((listing) => listing.active), [listings]);
   const soldListings = useMemo(() => listings.filter((listing) => !listing.active), [listings]);
@@ -35,27 +37,42 @@ export default function MarketplacePage({
       : null;
 
   const buyListing = async (listing) => {
+    if (!walletAuthToken) return;
     setLoading(listing.id);
+    setError("");
     try {
       const res = await fetch("/api/marketplace/buy", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ listingId: listing.id }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${walletAuthToken}`,
+        },
+        body: JSON.stringify({
+          listingId: listing.id,
+          tokenId: listing.tokenId,
+        }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || data.error || "Marketplace purchase failed");
+      }
 
       if (data.apiKeyInfo) {
         setNewApiKey(data.apiKeyInfo);
         setApiKeys((prev) => ({ ...prev, [listing.tokenId]: data.apiKeyInfo }));
       }
 
-      setListings((prev) =>
-        prev.map((item) => (item.id === listing.id ? { ...item, active: false } : item)),
-      );
-      setUserTokens((prev) => ({
-        ...prev,
-        [listing.tokenId]: (prev[listing.tokenId] || 0) + listing.amount,
-      }));
+      if (Array.isArray(data.listings)) {
+        setListings(data.listings);
+      } else {
+        setListings((prev) =>
+          prev.map((item) => (item.id === listing.id ? { ...item, active: false } : item)),
+        );
+      }
+      if (data.walletState) {
+        setUserTokens(data.walletState.userTokens || {});
+        setApiKeys(data.walletState.apiKeys || {});
+      }
 
       const savings = (
         (listing.retailPrice - listing.pricePerTokenHbar) *
@@ -68,6 +85,7 @@ export default function MarketplacePage({
       });
     } catch (err) {
       console.error(err);
+      setError(err.message || "Marketplace purchase failed");
     }
     setLoading(null);
   };
@@ -105,6 +123,12 @@ export default function MarketplacePage({
           <p className="text-xs text-gray-500">Best Discount</p>
         </div>
       </div>
+
+      {error && (
+        <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          {error}
+        </div>
+      )}
 
       {newApiKey && (
         <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-5">
@@ -192,11 +216,15 @@ export default function MarketplacePage({
                       <p className="text-xs text-gray-500">Save {savings} HBAR</p>
                       <button
                         onClick={() => buyListing(listing)}
-                        disabled={loading === listing.id}
+                        disabled={!walletAuthToken || loading === listing.id}
                         className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {loading === listing.id && <Loader2 className="h-4 w-4 animate-spin" />}
-                        {loading === listing.id ? "Buying..." : "Buy Now"}
+                        {!walletAuthToken
+                          ? "Sign In"
+                          : loading === listing.id
+                            ? "Buying..."
+                            : "Buy Now"}
                       </button>
                     </div>
                   </div>

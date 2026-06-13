@@ -27,12 +27,15 @@ export default function ExplorePage({
   setUserTokens,
   apiKeys,
   setApiKeys,
+  walletAccountId,
+  walletAuthToken,
   addActivity,
 }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("low");
   const [amounts, setAmounts] = useState({});
   const [loading, setLoading] = useState(null);
+  const [error, setError] = useState("");
 
   const visiblePlans = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -51,33 +54,56 @@ export default function ExplorePage({
   }, [plans, query, sort]);
 
   const buyTokens = async (plan) => {
+    if (!walletAuthToken) {
+      setError("Connect and sign with your wallet before buying API access.");
+      return;
+    }
     const amount = Math.max(1, Number(amounts[plan.tokenId] ?? 5));
     if (!Number.isFinite(amount)) return;
+    setError("");
     setLoading(plan.tokenId);
 
     try {
-      await fetch("/api/buy", {
+      const buyRes = await fetch("/api/buy", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${walletAuthToken}`,
+        },
         body: JSON.stringify({
           tokenId: plan.tokenId,
           amount,
           pricePerTokenHbar: plan.pricePerTokenHbar,
         }),
       });
+      const buyData = await buyRes.json();
+      if (!buyRes.ok) {
+        throw new Error(buyData.message || buyData.error || "Token purchase failed");
+      }
 
-      setUserTokens((prev) => ({
-        ...prev,
-        [plan.tokenId]: (prev[plan.tokenId] || 0) + amount,
-      }));
+      if (buyData.walletState) {
+        setUserTokens(buyData.walletState.userTokens || {});
+        setApiKeys(buyData.walletState.apiKeys || {});
+      }
 
       const keyRes = await fetch("/api/generate-key", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${walletAuthToken}`,
+        },
         body: JSON.stringify({ tokenId: plan.tokenId }),
       });
       const keyData = await keyRes.json();
-      setApiKeys((prev) => ({ ...prev, [plan.tokenId]: keyData }));
+      if (!keyRes.ok) {
+        throw new Error(keyData.message || keyData.error || "API key generation failed");
+      }
+      if (keyData.walletState) {
+        setUserTokens(keyData.walletState.userTokens || {});
+        setApiKeys(keyData.walletState.apiKeys || {});
+      } else {
+        setApiKeys((prev) => ({ ...prev, [plan.tokenId]: keyData }));
+      }
 
       addActivity({
         type: "buy",
@@ -86,6 +112,7 @@ export default function ExplorePage({
       });
     } catch (err) {
       console.error(err);
+      setError(err.message || "Purchase failed");
     }
 
     setLoading(null);
@@ -107,7 +134,7 @@ export default function ExplorePage({
         </div>
         <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-sm text-emerald-300">
           <ShieldCheck className="h-4 w-4" />
-          Hedera HTS access tokens
+          {walletAccountId ? "Hedera HTS access tokens" : "Connect wallet to buy"}
         </div>
       </div>
 
@@ -134,6 +161,12 @@ export default function ExplorePage({
           </select>
         </label>
       </div>
+
+      {error && (
+        <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          {error}
+        </div>
+      )}
 
       {visiblePlans.length === 0 ? (
         <div className="rounded-2xl border border-gray-800 bg-gray-900/70 p-10 text-center">
@@ -218,11 +251,15 @@ export default function ExplorePage({
                       />
                       <button
                         onClick={() => buyTokens(plan)}
-                        disabled={loading === plan.tokenId || amount < 1}
+                        disabled={!walletAuthToken || loading === plan.tokenId || amount < 1}
                         className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {loading === plan.tokenId && <Loader2 className="h-4 w-4 animate-spin" />}
-                        {loading === plan.tokenId ? "Buying..." : `Buy ${cost.toFixed(2)} HBAR`}
+                        {!walletAuthToken
+                          ? "Sign In"
+                          : loading === plan.tokenId
+                            ? "Buying..."
+                            : `Buy ${cost.toFixed(2)} HBAR`}
                       </button>
                     </div>
                     {apiKeys[plan.tokenId] && (
