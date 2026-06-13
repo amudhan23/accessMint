@@ -14,6 +14,8 @@ export default function UserPage({
   const [sellPrice, setSellPrice] = useState(0.07);
   const [loading, setLoading] = useState(null);
   const [selectedPlan, setSelectedPlan] = useState(null);
+  const [queryText, setQueryText] = useState("");
+  const [apiResponse, setApiResponse] = useState(null);
 
   const activePlan = selectedPlan || plans[0];
 
@@ -52,18 +54,20 @@ export default function UserPage({
     if (balance <= 0) return;
     setLoading("redeem");
     try {
-      await fetch("/api/redeem", {
+      const res = await fetch("/api/redeem", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tokenId: activePlan.tokenId }),
+        body: JSON.stringify({ tokenId: activePlan.tokenId, query: queryText }),
       });
+      const data = await res.json();
+      setApiResponse(data.apiResponse);
       setUserTokens((prev) => ({
         ...prev,
         [activePlan.tokenId]: prev[activePlan.tokenId] - 1,
       }));
       addActivity({
         type: "redeem",
-        message: `Redeemed 1 ${activePlan.symbol} token — API access granted`,
+        message: `Used 1 ${activePlan.symbol} token — ${activePlan.name} called`,
         tokenId: activePlan.tokenId,
       });
     } catch (err) {
@@ -177,7 +181,7 @@ export default function UserPage({
       </div>
 
       {/* Actions Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Buy Tokens */}
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-4">
           <div className="flex items-center gap-2">
@@ -209,26 +213,77 @@ export default function UserPage({
           </button>
         </div>
 
-        {/* Redeem Token */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-4">
+        {/* Use Token — API Call */}
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-4 md:col-span-2">
           <div className="flex items-center gap-2">
             <Flame className="w-5 h-5 text-orange-400" />
-            <h3 className="font-semibold">Use Token</h3>
+            <h3 className="font-semibold">Use Token → Call API</h3>
+            <span className="text-xs text-gray-500 ml-auto">
+              {balance} tokens remaining
+            </span>
           </div>
-          <div className="bg-gray-800/50 rounded-xl p-4 text-center">
-            <p className="text-3xl font-bold">{balance}</p>
-            <p className="text-xs text-gray-500 mt-1">tokens remaining</p>
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">
+              {activePlan?.name?.includes("Crypto")
+                ? "Enter coin name (e.g. bitcoin, ethereum)"
+                : activePlan?.name?.includes("Weather")
+                  ? "Enter city name (e.g. New York, Tokyo)"
+                  : "Enter your query"}
+            </label>
+            <input
+              type="text"
+              value={queryText}
+              onChange={(e) => setQueryText(e.target.value)}
+              placeholder={
+                activePlan?.name?.includes("Crypto")
+                  ? "bitcoin"
+                  : activePlan?.name?.includes("Weather")
+                    ? "New York"
+                    : "Enter query..."
+              }
+              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500 transition text-sm"
+            />
           </div>
-          <p className="text-xs text-gray-500">
-            Burns 1 token and grants 1 API call
-          </p>
+
           <button
             onClick={redeemToken}
-            disabled={loading === "redeem" || balance <= 0}
-            className="w-full py-2.5 rounded-xl bg-orange-600 text-white text-sm font-medium hover:bg-orange-700 transition disabled:opacity-50"
+            disabled={loading === "redeem" || balance <= 0 || !queryText.trim()}
+            className="w-full py-3 rounded-xl bg-orange-600 text-white font-medium hover:bg-orange-700 transition disabled:opacity-50"
           >
-            {loading === "redeem" ? "Redeeming..." : "Use 1 Token → API Call"}
+            {loading === "redeem"
+              ? "Burning token & calling API..."
+              : `Burn 1 ${activePlan?.symbol || ""} Token → Call API`}
           </button>
+
+          {apiResponse && (
+            <div className="bg-gray-800 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-mint-400 font-medium">
+                  {apiResponse.service}
+                </span>
+                <span className="text-xs text-gray-500">
+                  {apiResponse.timestamp}
+                </span>
+              </div>
+              <pre className="bg-gray-900 rounded-lg p-4 text-sm text-gray-300 overflow-x-auto whitespace-pre-wrap">
+                {JSON.stringify(apiResponse.data, null, 2)}
+              </pre>
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span>Tokens remaining: {apiResponse.tokensRemaining}</span>
+                {apiResponse.verified_on && (
+                  <a
+                    href={apiResponse.verified_on}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-mint-400 hover:underline"
+                  >
+                    Verify burn on Hashscan ↗
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* List for Sale */}

@@ -289,6 +289,105 @@ app.post("/api/verify-worldid", async (req, res) => {
   }
 });
 
+app.post("/api/redeem", async (req, res) => {
+  try {
+    const { tokenId, query } = req.body;
+    const { accountId: providerAccountId } = getClient();
+
+    // Step 1: Burn the token on Hedera
+    const result = await redeemToken({
+      userAccountId: demoUser.accountId,
+      userPrivateKey: demoUser.privateKey,
+      providerAccountId,
+      tokenId,
+      topicId: redemptionTopicId,
+    });
+
+    // Step 2: Look up provider's registered API
+    const plan = plans[tokenId];
+    if (!plan) {
+      return res.json({ ...result, apiResponse: { error: "Plan not found" } });
+    }
+
+    // Step 3: Call the provider's wrapped API
+    let apiData = {};
+    const userQuery = query || "";
+
+    if (plan.apiEndpoint) {
+      try {
+        let apiUrl = plan.apiEndpoint.replace(
+          "{query}",
+          encodeURIComponent(userQuery),
+        );
+        console.log(`   📡 Calling: ${apiUrl}`);
+        const apiRes = await fetch(apiUrl);
+        const rawData = await apiRes.json();
+
+        // Format response based on service type
+        if (plan.name.includes("Crypto")) {
+          const coin = userQuery.toLowerCase() || "bitcoin";
+          const coinData = rawData[coin];
+          if (coinData) {
+            apiData = {
+              coin: coin,
+              price_usd: "$" + coinData.usd.toLocaleString(),
+              market_cap:
+                "$" + Math.round(coinData.usd_market_cap).toLocaleString(),
+              change_24h: (coinData.usd_24h_change || 0).toFixed(2) + "%",
+            };
+          } else {
+            apiData = {
+              error: "Coin not found. Try: bitcoin, ethereum, hedera-hashgraph",
+            };
+          }
+        } else if (plan.name.includes("Weather")) {
+          const loc = rawData.results?.[0];
+          if (loc) {
+            const wxRes = await fetch(
+              `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current_weather=true`,
+            );
+            const wxData = await wxRes.json();
+            apiData = {
+              city: loc.name,
+              country: loc.country,
+              temperature: wxData.current_weather.temperature + "°C",
+              wind_speed: wxData.current_weather.windspeed + " km/h",
+              wind_direction: wxData.current_weather.winddirection + "°",
+            };
+          } else {
+            apiData = { error: "City not found" };
+          }
+        } else {
+          apiData = rawData;
+        }
+      } catch (e) {
+        console.error("API call failed:", e.message);
+        apiData = { error: "API call failed: " + e.message };
+      }
+    } else {
+      apiData = { message: "No API endpoint registered for this plan" };
+    }
+
+    const newBalance = await getTokenBalance(demoUser.accountId, tokenId);
+
+    result.apiResponse = {
+      service: plan.name,
+      provider: plan.ensName,
+      status: 200,
+      data: apiData,
+      tokensRemaining: newBalance,
+      token_burned: true,
+      verified_on: `https://hashscan.io/testnet/topic/${redemptionTopicId}`,
+      timestamp: new Date().toISOString(),
+    };
+
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Start server
 const PORT = 3001;
 init()
