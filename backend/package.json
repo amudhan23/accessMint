@@ -1,0 +1,19 @@
+{
+  "name": "accessmint",
+  "version": "1.0.0",
+  "description": "Tokenized API access - buy credits, use what you need, resell what you don't",
+  "type": "module",
+  "scripts": {
+    "setup": "node src/hedera/setup.js",
+    "mint": "node src/hedera/mint-plan.js",
+    "demo": "node src/demo/full-demo.js",
+    "dev": "node src/server.js"
+  },
+  "dependencies": {
+    "@hashgraph/sdk": "^2.51.0",
+    "@worldcoin/idkit-core": "^4.1.8",
+    "cors": "^2.8.6",
+    "dotenv": "^16.3.1",
+    "express": "^4.22.2"
+  }
+}
