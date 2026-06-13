@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { IDKitRequestWidget, orbLegacy } from "@worldcoin/idkit";
 import { ShieldCheck, UserCheck } from "lucide-react";
 
@@ -9,18 +9,15 @@ export default function WorldIDVerify({ onVerified, children }) {
   const [verified, setVerified] = useState(false);
   const [open, setOpen] = useState(false);
   const [rpContext, setRpContext] = useState(null);
-  const [rpId, setRpId] = useState(null);
 
-  // Fetch RP signature from backend when component mounts
   useEffect(() => {
     fetch("/api/rp-signature", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: ACTION }),
     })
-      .then((r) => r.json())
+      .then((response) => response.json())
       .then((data) => {
-        setRpId(data.rp_id || import.meta.env.VITE_WORLD_RP_ID);
         setRpContext({
           rp_id: data.rp_id || import.meta.env.VITE_WORLD_RP_ID,
           nonce: data.nonce,
@@ -35,9 +32,9 @@ export default function WorldIDVerify({ onVerified, children }) {
   if (verified) {
     return (
       <div>
-        <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-xl bg-mint-500/10 border border-mint-500/20">
-          <UserCheck className="w-4 h-4 text-mint-400" />
-          <span className="text-sm text-mint-400">Verified Human</span>
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2">
+          <UserCheck className="h-4 w-4 text-emerald-300" />
+          <span className="text-sm text-emerald-300">Verified Human</span>
         </div>
         {children}
       </div>
@@ -46,19 +43,19 @@ export default function WorldIDVerify({ onVerified, children }) {
 
   return (
     <div className="space-y-4">
-      <div className="bg-gray-800/50 rounded-xl p-5 text-center space-y-3">
-        <ShieldCheck className="w-10 h-10 text-gray-500 mx-auto" />
+      <div className="space-y-3 rounded-2xl border border-gray-800 bg-gray-900/80 p-6 text-center">
+        <ShieldCheck className="mx-auto h-10 w-10 text-gray-500" />
         <div>
-          <p className="font-medium">Human Verification Required</p>
-          <p className="text-sm text-gray-500 mt-1">
-            Verify with World ID to access the marketplace. This prevents bots
-            from manipulating prices.
+          <p className="font-medium text-white">Human Verification Required</p>
+          <p className="mt-1 text-sm text-gray-500">
+            Verify with World ID to access the marketplace. This prevents bots from manipulating
+            prices.
           </p>
         </div>
         <button
           onClick={() => setOpen(true)}
           disabled={!rpContext}
-          className="px-6 py-3 rounded-xl bg-white text-black font-semibold hover:bg-gray-200 transition disabled:opacity-50 mx-auto"
+          className="mx-auto rounded-xl bg-white px-6 py-3 font-semibold text-black transition hover:bg-gray-200 disabled:opacity-50"
         >
           {rpContext ? "Verify with World ID" : "Loading..."}
         </button>
@@ -87,11 +84,11 @@ export default function WorldIDVerify({ onVerified, children }) {
             setVerified(true);
             if (onVerified) onVerified(result);
           }}
-          onSuccess={() => console.log("World ID verified!")}
+          onSuccess={() => console.log("World ID verified")}
         />
       )}
 
-      <div className="opacity-40 pointer-events-none">{children}</div>
+      <div className="pointer-events-none opacity-40">{children}</div>
     </div>
   );
 }

@@ -1,6 +1,16 @@
 import { useState } from "react";
-import { Zap, Plus, Package, DollarSign, Hash } from "lucide-react";
-import { ENSInput } from "../components/ENSIntegration";
+import {
+  BarChart3,
+  Coins,
+  DollarSign,
+  Hash,
+  Link2,
+  ListPlus,
+  Loader2,
+  Package,
+  Sparkles,
+} from "lucide-react";
+import { ENSInput, ENSIdentity } from "../components/ENSIntegration";
 
 export default function ProviderPage({ plans, setPlans, addActivity }) {
   const [name, setName] = useState("AI Summarizer API");
@@ -32,7 +42,7 @@ export default function ProviderPage({ plans, setPlans, addActivity }) {
       setPlans((prev) => [...prev, plan]);
       addActivity({
         type: "create",
-        message: `Created "${name}" — ${supply} tokens at ${price} HBAR each`,
+        message: `Created "${name}" with ${supply} tokens at ${price} HBAR each`,
         tokenId: plan.tokenId,
       });
     } catch (err) {
@@ -42,167 +52,181 @@ export default function ProviderPage({ plans, setPlans, addActivity }) {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold mb-1">Provider Dashboard</h2>
-        <p className="text-gray-500">
-          Create access plans and mint tokens for your API
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-400">
+          Providers
+        </p>
+        <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">List Your API</h2>
+        <p className="mt-1 text-sm text-gray-400">
+          Mint access tokens and start earning.
         </p>
       </div>
 
-      {/* Create Plan Form */}
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-5">
-        <div className="flex items-center gap-2 mb-2">
-          <Plus className="w-5 h-5 text-mint-400" />
-          <h3 className="font-semibold text-lg">Create Access Plan</h3>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div className="col-span-2">
-            <label className="block text-sm text-gray-400 mb-1.5">
-              Plan Name
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-mint-500 transition"
-              placeholder="e.g. AI Summarizer API"
-            />
+      <div className="rounded-2xl border border-gray-800 bg-gray-900/80 p-5 shadow-xl shadow-black/10">
+        <div className="flex items-center gap-3 border-b border-gray-800 pb-4">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-emerald-500/20 bg-emerald-500/10">
+            <ListPlus className="h-5 w-5 text-emerald-300" />
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">
-              Token Symbol
-            </label>
-            <input
-              type="text"
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-mint-500 transition"
-              placeholder="e.g. AISUM"
+            <h3 className="font-semibold text-white">Create Access Plan</h3>
+            <p className="text-sm text-gray-500">HTS token supply, price, and API metadata.</p>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <label className="space-y-1.5 sm:col-span-2">
+            <span className="text-sm text-gray-400">API Name</span>
+            <div className="relative">
+              <Sparkles className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                className="h-11 w-full rounded-xl border border-gray-800 bg-gray-950 pl-10 pr-4 text-sm text-white outline-none transition focus:border-emerald-500"
+                placeholder="Crypto Price Intelligence"
+              />
+            </div>
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-sm text-gray-400">Token Symbol</span>
+            <div className="relative">
+              <Hash className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+              <input
+                value={symbol}
+                onChange={(event) => setSymbol(event.target.value.toUpperCase())}
+                className="h-11 w-full rounded-xl border border-gray-800 bg-gray-950 pl-10 pr-4 text-sm text-white outline-none transition focus:border-emerald-500"
+                placeholder="CRYPTO"
+              />
+            </div>
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-sm text-gray-400">Supply</span>
+            <div className="relative">
+              <Coins className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+              <input
+                type="number"
+                min="1"
+                value={supply}
+                onChange={(event) => setSupply(Number(event.target.value))}
+                className="h-11 w-full rounded-xl border border-gray-800 bg-gray-950 pl-10 pr-4 text-sm text-white outline-none transition focus:border-emerald-500"
+              />
+            </div>
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-sm text-gray-400">Price per call (HBAR)</span>
+            <div className="relative">
+              <DollarSign className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={price}
+                onChange={(event) => setPrice(Number(event.target.value))}
+                className="h-11 w-full rounded-xl border border-gray-800 bg-gray-950 pl-10 pr-4 text-sm text-white outline-none transition focus:border-emerald-500"
+              />
+            </div>
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-sm text-gray-400">Your ENS Name</span>
+            <ENSInput value={ensName} onChange={setEnsName} placeholder="cryptointel.eth" />
+          </label>
+
+          <label className="space-y-1.5 sm:col-span-2">
+            <span className="text-sm text-gray-400">API Endpoint URL</span>
+            <div className="relative">
+              <Link2 className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-gray-500" />
+              <input
+                value={apiEndpoint}
+                onChange={(event) => setApiEndpoint(event.target.value)}
+                className="h-11 w-full rounded-xl border border-gray-800 bg-gray-950 pl-10 pr-4 text-sm text-white outline-none transition focus:border-emerald-500"
+                placeholder="https://api.example.com/v1/data?q={query}"
+              />
+            </div>
+            <p className="text-xs text-gray-500">Use {"{query}"} as the placeholder.</p>
+          </label>
+
+          <label className="space-y-1.5 sm:col-span-2">
+            <span className="text-sm text-gray-400">Description</span>
+            <textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              rows={3}
+              className="w-full resize-none rounded-xl border border-gray-800 bg-gray-950 px-4 py-3 text-sm text-white outline-none transition focus:border-emerald-500"
+              placeholder="Real-time crypto prices, market cap, and 24h movement."
             />
+          </label>
+        </div>
+
+        <div className="mt-5 grid gap-3 rounded-2xl border border-gray-800 bg-gray-950 p-4 text-sm text-gray-400 sm:grid-cols-2">
+          <div>
+            <p className="text-gray-500">Minted supply</p>
+            <p className="mt-1 text-lg font-semibold text-white">{Number(supply || 0)} tokens</p>
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">
-              Total Supply
-            </label>
-            <input
-              type="number"
-              value={supply}
-              onChange={(e) => setSupply(Number(e.target.value))}
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-mint-500 transition"
-            />
+            <p className="text-gray-500">Full sale revenue</p>
+            <p className="mt-1 text-lg font-semibold text-emerald-300">
+              {(Number(supply || 0) * Number(price || 0)).toFixed(2)} HBAR
+            </p>
           </div>
-          <div className="col-span-2">
-            <label className="block text-sm text-gray-400 mb-1.5">
-              Price per Token (HBAR)
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              value={price}
-              onChange={(e) => setPrice(Number(e.target.value))}
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-mint-500 transition"
-            />
-          </div>
-        </div>
-
-        {/* adding ens section */}
-        <div className="col-span-2">
-          <label className="block text-sm text-gray-400 mb-1.5">
-            Provider ENS Name (optional)
-          </label>
-          <ENSInput
-            value={ensName}
-            onChange={setEnsName}
-            placeholder="yourname.eth"
-          />
-        </div>
-
-        <div className="col-span-2">
-          <label className="block text-sm text-gray-400 mb-1.5">
-            API Endpoint URL
-          </label>
-          <input
-            type="text"
-            value={apiEndpoint}
-            onChange={(e) => setApiEndpoint(e.target.value)}
-            placeholder="https://api.example.com/v1/data?q={query}"
-            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-mint-500 transition text-sm"
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            Use {"{query}"} as placeholder for user input
-          </p>
-        </div>
-
-        <div className="col-span-2">
-          <label className="block text-sm text-gray-400 mb-1.5">
-            Description
-          </label>
-          <input
-            type="text"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="What does your API do?"
-            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-mint-500 transition text-sm"
-          />
-        </div>
-
-        <div className="bg-gray-800/50 rounded-xl p-4 text-sm text-gray-400">
-          <p>
-            This will mint{" "}
-            <span className="text-white font-medium">{supply}</span> access
-            tokens on Hedera using HTS.
-          </p>
-          <p>
-            Total revenue at full sale:{" "}
-            <span className="text-mint-400 font-medium">
-              {(supply * price).toFixed(2)} HBAR
-            </span>
-          </p>
         </div>
 
         <button
           onClick={createPlan}
           disabled={loading}
-          className="w-full py-3.5 rounded-xl bg-gradient-to-r from-mint-500 to-mint-600 text-white font-semibold hover:from-mint-600 hover:to-mint-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
+          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
           {loading ? "Creating on Hedera..." : "Create Access Plan"}
         </button>
       </div>
 
-      {/* Existing Plans */}
-      {plans.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="font-semibold text-lg">Your Plans</h3>
-          {plans.map((plan, i) => (
-            <div
-              key={i}
-              className="bg-gray-900 border border-gray-800 rounded-2xl p-5 flex items-center justify-between"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-mint-500/10 flex items-center justify-center">
-                  <Package className="w-6 h-6 text-mint-400" />
-                </div>
-                <div>
-                  <h4 className="font-medium">{plan.name}</h4>
-                  <p className="text-sm text-gray-500">
-                    {plan.symbol} · Token ID: {plan.tokenId}
-                  </p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="font-semibold text-mint-400">
-                  {plan.totalSupply} tokens
-                </p>
-                <p className="text-sm text-gray-500">
-                  {plan.pricePerTokenHbar} HBAR each
-                </p>
-              </div>
-            </div>
-          ))}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <h3 className="font-semibold text-white">Your Listed APIs</h3>
+          <span className="text-sm text-gray-500">{plans.length} total</span>
         </div>
-      )}
+
+        {plans.length === 0 ? (
+          <div className="rounded-2xl border border-gray-800 bg-gray-900/70 p-8 text-center">
+            <BarChart3 className="mx-auto h-10 w-10 text-gray-700" />
+            <p className="mt-3 text-sm text-gray-500">Created plans will appear here.</p>
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            {plans.map((plan) => (
+              <article
+                key={plan.tokenId}
+                className="flex flex-col gap-4 rounded-2xl border border-gray-800 bg-gray-900/70 p-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-500/10">
+                    <Package className="h-5 w-5 text-emerald-300" />
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-white">{plan.name}</h4>
+                    <p className="text-sm text-gray-500">
+                      {plan.symbol} <span className="font-mono">{plan.tokenId}</span>
+                    </p>
+                    {plan.ensName && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Provider: <ENSIdentity ensName={plan.ensName} />
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="text-sm sm:text-right">
+                  <p className="font-semibold text-emerald-300">{plan.totalSupply} tokens</p>
+                  <p className="text-gray-500">{plan.pricePerTokenHbar} HBAR each</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

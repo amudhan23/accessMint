@@ -1,29 +1,38 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  Activity,
+  BadgeCheck,
   Coins,
+  Layers3,
+  ListPlus,
   Store,
-  Flame,
-  BarChart3,
-  ArrowRightLeft,
-  Zap,
+  WalletCards,
 } from "lucide-react";
+import ExplorePage from "./pages/ExplorePage";
 import ProviderPage from "./pages/ProviderPage";
 import UserPage from "./pages/UserPage";
 import MarketplacePage from "./pages/MarketplacePage";
 import ActivityLog from "./components/ActivityLog";
-import { useEffect } from "react";
+
+const tabs = [
+  { id: "explore", label: "Explore", icon: Layers3 },
+  { id: "user", label: "My APIs", icon: WalletCards },
+  { id: "marketplace", label: "Marketplace", icon: Store },
+  { id: "provider", label: "List API", icon: ListPlus },
+];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("user");
+  const [activeTab, setActiveTab] = useState("explore");
   const [plans, setPlans] = useState([]);
   const [userTokens, setUserTokens] = useState({});
+  const [apiKeys, setApiKeys] = useState({});
   const [listings, setListings] = useState([]);
   const [activity, setActivity] = useState([]);
   const [currentUser, setCurrentUser] = useState("Alice");
 
   useEffect(() => {
     fetch("/api/plans")
-      .then((r) => r.json())
+      .then((response) => response.json())
       .then((data) => {
         if (Array.isArray(data)) setPlans(data);
       })
@@ -46,145 +55,113 @@ export default function App() {
     const data = await res.json();
     setCurrentUser(data.name);
     setUserTokens({});
+    setApiKeys({});
   };
 
-  const tabs = [
-    {
-      id: "provider",
-      label: "Provider",
-      icon: Zap,
-      desc: "Create access plans",
-    },
-    { id: "user", label: "Dashboard", icon: Coins, desc: "Buy & use tokens" },
-    {
-      id: "marketplace",
-      label: "Marketplace",
-      icon: Store,
-      desc: "Resell tokens",
-    },
-  ];
-
   return (
-    <div className="min-h-screen">
-      {/* Header */}
-      <header className="border-b border-gray-800 bg-gray-950/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
+    <div className="min-h-screen bg-gray-950 text-white">
+      <header className="sticky top-0 z-50 border-b border-gray-800/80 bg-gray-950/90 backdrop-blur-xl">
+        <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-mint-400 to-mint-600 flex items-center justify-center">
-                <Coins className="w-5 h-5 text-white" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-400/10 shadow-lg shadow-emerald-950">
+                <Coins className="h-5 w-5 text-emerald-300" />
               </div>
               <div>
-                <h1 className="text-xl font-bold tracking-tight">AccessMint</h1>
-                <p className="text-xs text-gray-500">
-                  Tokenized API Access on Hedera
-                </p>
+                <h1 className="text-xl font-semibold tracking-tight">AccessMint</h1>
+                <p className="text-xs text-gray-500">Tokenized API Access on Hedera</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1 bg-gray-800 rounded-xl p-1">
-                <button
-                  onClick={() => switchUser("alice")}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                    currentUser === "Alice"
-                      ? "bg-blue-600 text-white"
-                      : "text-gray-400 hover:text-white"
-                  }`}
-                >
-                  👩 Alice
-                </button>
-                <button
-                  onClick={() => switchUser("bob")}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                    currentUser === "Bob"
-                      ? "bg-orange-600 text-white"
-                      : "text-gray-400 hover:text-white"
-                  }`}
-                >
-                  👨 Bob
-                </button>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex rounded-2xl border border-gray-800 bg-gray-900 p-1">
+                {["Alice", "Bob"].map((name) => (
+                  <button
+                    key={name}
+                    onClick={() => switchUser(name.toLowerCase())}
+                    className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
+                      currentUser === name
+                        ? "bg-blue-600 text-white shadow-lg shadow-blue-950"
+                        : "text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    {name}
+                  </button>
+                ))}
               </div>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-mint-500/10 text-mint-400 border border-mint-500/20 text-sm">
-                <span className="w-1.5 h-1.5 rounded-full bg-mint-400 animate-pulse" />
-                Hedera Testnet
+              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
+                <BadgeCheck className="h-4 w-4" />
+                Testnet
               </span>
             </div>
           </div>
-        </div>
-      </header>
 
-      {/* Tab Navigation */}
-      <div className="border-b border-gray-800 bg-gray-900/50">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="flex gap-1">
+          <nav className="mt-3 flex gap-1 overflow-x-auto rounded-xl border border-gray-800 bg-gray-900/70 p-1">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-5 py-3.5 text-sm font-medium transition-all relative
-                  ${
-                    activeTab === tab.id
-                      ? "text-mint-400"
-                      : "text-gray-500 hover:text-gray-300"
-                  }`}
+                className={`inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                  activeTab === tab.id
+                    ? "bg-gray-800 text-emerald-300 shadow-inner"
+                    : "text-gray-500 hover:bg-gray-800/60 hover:text-gray-200"
+                }`}
               >
-                <tab.icon className="w-4 h-4" />
+                <tab.icon className="h-4 w-4" />
                 {tab.label}
-                {activeTab === tab.id && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-mint-400 rounded-full" />
-                )}
               </button>
             ))}
-          </div>
+          </nav>
         </div>
-      </div>
+      </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Page Content */}
-          <div className="lg:col-span-2">
-            {activeTab === "provider" && (
-              <ProviderPage
-                plans={plans}
-                setPlans={setPlans}
-                addActivity={addActivity}
-              />
-            )}
-            {activeTab === "user" && (
-              <UserPage
-                plans={plans}
-                userTokens={userTokens}
-                setUserTokens={setUserTokens}
-                listings={listings}
-                setListings={setListings}
-                addActivity={addActivity}
-              />
-            )}
-            {activeTab === "marketplace" && (
-              <MarketplacePage
-                listings={listings}
-                setListings={setListings}
-                userTokens={userTokens}
-                setUserTokens={setUserTokens}
-                addActivity={addActivity}
-              />
-            )}
-          </div>
+      <main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <section className="min-w-0">
+          {activeTab === "explore" && (
+            <ExplorePage
+              plans={plans}
+              userTokens={userTokens}
+              setUserTokens={setUserTokens}
+              apiKeys={apiKeys}
+              setApiKeys={setApiKeys}
+              addActivity={addActivity}
+            />
+          )}
+          {activeTab === "user" && (
+            <UserPage
+              plans={plans}
+              userTokens={userTokens}
+              setUserTokens={setUserTokens}
+              apiKeys={apiKeys}
+              setApiKeys={setApiKeys}
+              setListings={setListings}
+              addActivity={addActivity}
+            />
+          )}
+          {activeTab === "marketplace" && (
+            <MarketplacePage
+              listings={listings}
+              setListings={setListings}
+              setUserTokens={setUserTokens}
+              setApiKeys={setApiKeys}
+              addActivity={addActivity}
+            />
+          )}
+          {activeTab === "provider" && (
+            <ProviderPage plans={plans} setPlans={setPlans} addActivity={addActivity} />
+          )}
+        </section>
 
-          {/* Activity Feed */}
-          <div className="lg:col-span-1">
-            <ActivityLog activity={activity} />
-          </div>
-        </div>
+        <aside className="min-w-0">
+          <ActivityLog activity={activity} />
+        </aside>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-gray-800 mt-16">
-        <div className="max-w-7xl mx-auto px-6 py-6 text-center text-sm text-gray-600">
-          Built at ETHGlobal NYC 2026 · Powered by Hedera Token Service &
-          Consensus Service
-        </div>
+      <footer className="border-t border-gray-900 px-4 py-6 text-center text-sm text-gray-600">
+        <span className="inline-flex items-center gap-2">
+          <Activity className="h-4 w-4" />
+          Powered by Hedera Token Service and Consensus Service
+        </span>
       </footer>
     </div>
   );

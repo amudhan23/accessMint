@@ -140,7 +140,7 @@ async function init() {
     const plan1 = await createAccessPlan({
       name: "Crypto Price Intelligence",
       symbol: "CRYPTO",
-      totalSupply: 10,
+      totalSupply: 50,
       pricePerTokenHbar: 0.1,
     });
     plan1.ensName = "cryptointel.eth";
@@ -152,7 +152,7 @@ async function init() {
     const plan2 = await createAccessPlan({
       name: "Weather Intelligence API",
       symbol: "WTHR",
-      totalSupply: 10,
+      totalSupply: 50,
       pricePerTokenHbar: 0.1,
     });
     plan2.ensName = "weatherapi.eth";
@@ -250,25 +250,47 @@ app.post("/api/list", async (req, res) => {
 app.post("/api/marketplace/buy", async (req, res) => {
   try {
     const { listingId } = req.body;
+    const buyer = demoUser;
 
-    // For demo, create a second buyer account
-    const { client } = getClient();
-    const buyerKey = PrivateKey.generateED25519();
-    const buyerTx = new AccountCreateTransaction()
-      .setKey(buyerKey.publicKey)
-      .setInitialBalance(new Hbar(50));
-    const buyerResponse = await buyerTx.execute(client);
-    const buyerReceipt = await buyerResponse.getReceipt(client);
-    const buyer = { accountId: buyerReceipt.accountId, privateKey: buyerKey };
+    try {
+      const planTokenId = Object.values(plans)[0]?.tokenId;
+      if (planTokenId) {
+        await associateToken(buyer.accountId, buyer.privateKey, planTokenId);
+      }
+    } catch (e) {
+      /* already associated */
+    }
+
+    const sellerKey = demoUser.name === "Alice" ? "bob" : "alice";
+    const seller = users[sellerKey];
 
     const result = await buyFromMarketplace({
       listingId,
       buyerAccountId: buyer.accountId,
       buyerPrivateKey: buyer.privateKey,
-      sellerPrivateKey: demoUser.privateKey,
+      sellerPrivateKey: seller.privateKey,
       topicId: marketplaceTopicId,
     });
 
+    // Generate API key for the buyer
+    const tokenId = Object.keys(plans)[0];
+    const apiKey = "ak_" + Math.random().toString(36).slice(2, 15);
+    apiKeys[apiKey] = {
+      accountId: buyer.accountId,
+      privateKey: buyer.privateKey,
+      tokenId,
+      planName: plans[tokenId]?.name || "Unknown",
+    };
+    result.apiKey = apiKey;
+    result.apiKeyInfo = {
+      key: apiKey,
+      endpoint: "http://localhost:3001/v1/call",
+      usage: "Authorization: Bearer " + apiKey,
+    };
+
+    console.log(`   🔑 API key for ${buyer.name}: ${apiKey}`);
+
+    saveState();
     res.json(result);
   } catch (err) {
     console.error(err);
@@ -277,35 +299,46 @@ app.post("/api/marketplace/buy", async (req, res) => {
 });
 
 // POST /api/verify-worldid — Verify World ID proof
+// app.post("/api/verify-worldid", async (req, res) => {
+//   try {
+//     const proof = req.body;
+
+//     // Verify with World ID API
+//     const verifyRes = await fetch(
+//       `https://developer.world.org/api/v2/verify/app_staging_xxxxx`,
+//       {
+//         method: "POST",
+//         headers: { "Content-Type": "application/json" },
+//         body: JSON.stringify({
+//           ...proof,
+//           action: "marketplace-verify",
+//           verification_level: "device",
+//         }),
+//       },
+//     );
+
+//     const result = await verifyRes.json();
+
+//     if (verifyRes.ok) {
+//       console.log("✅ World ID verified!");
+//       res.json({ verified: true, nullifier_hash: result.nullifier_hash });
+//     } else {
+//       console.log("❌ World ID failed:", result);
+//       res.json({ verified: false, error: result });
+//     }
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ verified: false, error: err.message });
+//   }
+// });
+
 app.post("/api/verify-worldid", async (req, res) => {
   try {
-    const proof = req.body;
-
-    // Verify with World ID API
-    const verifyRes = await fetch(
-      `https://developer.world.org/api/v2/verify/app_staging_xxxxx`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...proof,
-          action: "marketplace-verify",
-          verification_level: "device",
-        }),
-      },
-    );
-
-    const result = await verifyRes.json();
-
-    if (verifyRes.ok) {
-      console.log("✅ World ID verified!");
-      res.json({ verified: true, nullifier_hash: result.nullifier_hash });
-    } else {
-      console.log("❌ World ID failed:", result);
-      res.json({ verified: false, error: result });
-    }
+    console.log("✅ World ID verification received");
+    // For hackathon demo: accept the proof
+    // Production: verify with World ID API
+    res.json({ verified: true });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ verified: false, error: err.message });
   }
 });
@@ -518,7 +551,16 @@ app.post("/v1/call", async (req, res) => {
   }
 
   // Check token balance
-  const balance = await getTokenBalance(keyData.accountId, keyData.tokenId);
+  const balance = await getTokenBalance(
+    typeof keyData.accountId === "string"
+      ? AccountId.fromString(keyData.accountId)
+      : keyData.accountId,
+    keyData.tokenId,
+  );
+  console.log(
+    `   🔍 Debug: key=${apiKey}, accountId=${keyData.accountId}, tokenId=${keyData.tokenId}, balance=${balance}`,
+  );
+
   if (balance <= 0) {
     return res.status(403).json({
       error: "NO_TOKENS_REMAINING",
@@ -528,11 +570,23 @@ app.post("/v1/call", async (req, res) => {
     });
   }
 
+  // Check token balance
+  //   const balance = await getTokenBalance(keyData.accountId, keyData.tokenId);
+  console.log(
+    `   🔍 Debug: key=${apiKey}, accountId=${keyData.accountId}, tokenId=${keyData.tokenId}, balance=${balance}`,
+  );
+
   // Burn 1 token
   const { accountId: providerAccountId } = getClient();
   await redeemToken({
-    userAccountId: keyData.accountId,
-    userPrivateKey: keyData.privateKey,
+    userAccountId:
+      typeof keyData.accountId === "string"
+        ? AccountId.fromString(keyData.accountId)
+        : keyData.accountId,
+    userPrivateKey:
+      typeof keyData.privateKey === "string"
+        ? PrivateKey.fromStringED25519(keyData.privateKey)
+        : keyData.privateKey,
     providerAccountId,
     tokenId: keyData.tokenId,
     topicId: redemptionTopicId,

@@ -1,16 +1,38 @@
-import { useState } from "react";
-import { Store, ShoppingCart, TrendingDown, Clock } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  BadgePercent,
+  CheckCircle2,
+  Clock,
+  KeyRound,
+  Loader2,
+  ShoppingCart,
+  Store,
+  TrendingDown,
+} from "lucide-react";
 import WorldIDVerify from "../components/WorldIDVerify";
 import { ENSIdentity } from "../components/ENSIntegration";
 
 export default function MarketplacePage({
   listings,
   setListings,
-  userTokens,
   setUserTokens,
+  setApiKeys,
   addActivity,
 }) {
   const [loading, setLoading] = useState(null);
+  const [newApiKey, setNewApiKey] = useState(null);
+
+  const activeListings = useMemo(() => listings.filter((listing) => listing.active), [listings]);
+  const soldListings = useMemo(() => listings.filter((listing) => !listing.active), [listings]);
+  const totalSold = soldListings.reduce((sum, listing) => sum + Number(listing.amount || 0), 0);
+  const bestDiscount =
+    activeListings.length > 0
+      ? Math.max(
+          ...activeListings.map(
+            (listing) => (1 - listing.pricePerTokenHbar / listing.retailPrice) * 100,
+          ),
+        ).toFixed(0)
+      : null;
 
   const buyListing = async (listing) => {
     setLoading(listing.id);
@@ -22,12 +44,14 @@ export default function MarketplacePage({
       });
       const data = await res.json();
 
-      // Update listing status
-      setListings((prev) =>
-        prev.map((l) => (l.id === listing.id ? { ...l, active: false } : l)),
-      );
+      if (data.apiKeyInfo) {
+        setNewApiKey(data.apiKeyInfo);
+        setApiKeys((prev) => ({ ...prev, [listing.tokenId]: data.apiKeyInfo }));
+      }
 
-      // Update user balance
+      setListings((prev) =>
+        prev.map((item) => (item.id === listing.id ? { ...item, active: false } : item)),
+      );
       setUserTokens((prev) => ({
         ...prev,
         [listing.tokenId]: (prev[listing.tokenId] || 0) + listing.amount,
@@ -39,7 +63,7 @@ export default function MarketplacePage({
       ).toFixed(2);
       addActivity({
         type: "marketplace_buy",
-        message: `Bought ${listing.amount} ${listing.symbol} tokens from marketplace — saved ${savings} HBAR`,
+        message: `Bought ${listing.amount} ${listing.symbol} tokens from marketplace and saved ${savings} HBAR`,
         tokenId: listing.tokenId,
       });
     } catch (err) {
@@ -48,160 +72,160 @@ export default function MarketplacePage({
     setLoading(null);
   };
 
-  const activeListings = listings.filter((l) => l.active);
-  const soldListings = listings.filter((l) => !l.active);
-
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold mb-1">Marketplace</h2>
-        <p className="text-gray-500">
-          Buy discounted access tokens from other users
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-purple-400">
+          Resale
+        </p>
+        <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">
+          Secondary Market
+        </h2>
+        <p className="mt-1 text-sm text-gray-400">
+          Buy discounted API tokens from other users.
         </p>
       </div>
 
-      {/* Stats Bar */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-          <p className="text-2xl font-bold">{activeListings.length}</p>
-          <p className="text-xs text-gray-500 mt-1">Active Listings</p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl border border-gray-800 bg-gray-900/80 p-4">
+          <Store className="h-5 w-5 text-purple-300" />
+          <p className="mt-3 text-2xl font-semibold text-white">{activeListings.length}</p>
+          <p className="text-xs text-gray-500">Active Listings</p>
         </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-          <p className="text-2xl font-bold">{soldListings.length}</p>
-          <p className="text-xs text-gray-500 mt-1">Tokens Sold</p>
+        <div className="rounded-2xl border border-gray-800 bg-gray-900/80 p-4">
+          <CheckCircle2 className="h-5 w-5 text-emerald-300" />
+          <p className="mt-3 text-2xl font-semibold text-white">{totalSold}</p>
+          <p className="text-xs text-gray-500">Total Sold</p>
         </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-          <p className="text-2xl font-bold text-mint-400">
-            {activeListings.length > 0
-              ? Math.max(
-                  ...activeListings.map(
-                    (l) => (1 - l.pricePerTokenHbar / l.retailPrice) * 100,
-                  ),
-                ).toFixed(0) + "%"
-              : "—"}
+        <div className="rounded-2xl border border-gray-800 bg-gray-900/80 p-4">
+          <BadgePercent className="h-5 w-5 text-orange-300" />
+          <p className="mt-3 text-2xl font-semibold text-emerald-300">
+            {bestDiscount ? `${bestDiscount}%` : "-"}
           </p>
-          <p className="text-xs text-gray-500 mt-1">Best Discount</p>
+          <p className="text-xs text-gray-500">Best Discount</p>
         </div>
       </div>
 
-      {/* Active Listings */}
+      {newApiKey && (
+        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-5">
+          <div className="flex items-center gap-2 text-sm font-medium text-emerald-300">
+            <KeyRound className="h-4 w-4" />
+            API key from marketplace purchase
+          </div>
+          <code className="mt-3 block break-all rounded-xl border border-gray-800 bg-gray-950 p-3 font-mono text-sm text-white">
+            {newApiKey.key || newApiKey.apiKey}
+          </code>
+          {newApiKey.endpoint && (
+            <p className="mt-3 font-mono text-xs text-gray-400">POST {newApiKey.endpoint}</p>
+          )}
+        </div>
+      )}
+
       <WorldIDVerify>
         {activeListings.length === 0 ? (
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-12 text-center">
-            <Store className="w-12 h-12 text-gray-700 mx-auto mb-4" />
-            <p className="text-gray-500 text-lg">No listings yet</p>
-            <p className="text-gray-600 text-sm mt-1">
-              Go to Dashboard and list some tokens for resale
+          <div className="rounded-2xl border border-gray-800 bg-gray-900/70 p-10 text-center">
+            <Store className="mx-auto h-12 w-12 text-gray-700" />
+            <h3 className="mt-4 text-lg font-semibold text-white">No active listings</h3>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-500">
+              Purchased tokens can be listed for resale from My APIs.
             </p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="grid gap-4">
             {activeListings.map((listing) => {
               const discount = (
                 (1 - listing.pricePerTokenHbar / listing.retailPrice) *
                 100
               ).toFixed(0);
-              const totalCost = (
-                listing.amount * listing.pricePerTokenHbar
-              ).toFixed(2);
+              const retailTotal = (listing.amount * listing.retailPrice).toFixed(2);
+              const totalCost = (listing.amount * listing.pricePerTokenHbar).toFixed(2);
               const savings = (
                 (listing.retailPrice - listing.pricePerTokenHbar) *
                 listing.amount
               ).toFixed(2);
 
               return (
-                <div
+                <article
                   key={listing.id}
-                  className="bg-gray-900 border border-gray-800 rounded-2xl p-5 hover:border-gray-700 transition"
+                  className="rounded-2xl border border-gray-800 bg-gray-900/80 p-5 shadow-xl shadow-black/10 transition hover:border-gray-700"
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 rounded-xl bg-purple-500/10 flex items-center justify-center mt-0.5">
-                        <ShoppingCart className="w-6 h-6 text-purple-400" />
+                  <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex gap-4">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-purple-500/20 bg-purple-500/10">
+                        <ShoppingCart className="h-6 w-6 text-purple-300" />
                       </div>
                       <div>
-                        <h4 className="font-semibold text-lg">
+                        <h3 className="text-lg font-semibold text-white">
                           {listing.amount} {listing.symbol} Tokens
-                        </h4>
-                        <p className="text-sm text-gray-500 mt-0.5">
+                        </h3>
+                        <p className="mt-1 font-mono text-xs text-gray-500">
                           Token ID: {listing.tokenId}
                         </p>
-                        {listing.ensName && (
-                          <p className="text-sm mt-0.5">
-                            Provider: <ENSIdentity ensName={listing.ensName} />
-                          </p>
-                        )}
-
-                        <div className="flex items-center gap-4 mt-3">
-                          <div className="flex items-center gap-1.5">
-                            <TrendingDown className="w-4 h-4 text-mint-400" />
-                            <span className="text-sm text-mint-400 font-medium">
-                              {discount}% off retail
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <Clock className="w-4 h-4 text-gray-500" />
-                            <span className="text-sm text-gray-500">
+                        <p className="mt-2 text-sm text-gray-400">
+                          Provider: <ENSIdentity ensName={listing.ensName || "provider.eth"} />
+                        </p>
+                        <p className="mt-1 text-sm text-gray-500">
+                          Seller: {listing.seller || "AccessMint user"}
+                        </p>
+                        <div className="mt-4 flex flex-wrap gap-3">
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-300">
+                            <TrendingDown className="h-3.5 w-3.5" />
+                            {discount}% off
+                          </span>
+                          {listing.createdAt && (
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-gray-800 bg-gray-950 px-2.5 py-1 text-xs text-gray-500">
+                              <Clock className="h-3.5 w-3.5" />
                               {listing.createdAt}
                             </span>
-                          </div>
+                          )}
                         </div>
                       </div>
                     </div>
 
-                    <div className="text-right space-y-3">
-                      <div>
-                        <p className="text-sm text-gray-500 line-through">
-                          {(listing.amount * listing.retailPrice).toFixed(2)}{" "}
-                          HBAR
-                        </p>
-                        <p className="text-xl font-bold text-mint-400">
-                          {totalCost} HBAR
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          Save {savings} HBAR
-                        </p>
-                      </div>
+                    <div className="min-w-[180px] rounded-2xl border border-gray-800 bg-gray-950 p-4 sm:text-right">
+                      <p className="text-sm text-gray-500">
+                        Retail <span className="line-through">{retailTotal} HBAR</span>
+                      </p>
+                      <p className="mt-1 text-2xl font-semibold text-emerald-300">
+                        {totalCost} HBAR
+                      </p>
+                      <p className="text-xs text-gray-500">Save {savings} HBAR</p>
                       <button
                         onClick={() => buyListing(listing)}
                         disabled={loading === listing.id}
-                        className="px-6 py-2.5 rounded-xl bg-mint-600 text-white text-sm font-medium hover:bg-mint-700 transition disabled:opacity-50"
+                        className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
                       >
+                        {loading === listing.id && <Loader2 className="h-4 w-4 animate-spin" />}
                         {loading === listing.id ? "Buying..." : "Buy Now"}
                       </button>
                     </div>
                   </div>
-                </div>
+                </article>
               );
             })}
           </div>
         )}
       </WorldIDVerify>
 
-      {/* Sold Listings */}
       {soldListings.length > 0 && (
         <div className="space-y-3">
-          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider">
+          <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-gray-500">
             Recently Sold
           </h3>
           {soldListings.map((listing) => (
             <div
               key={listing.id}
-              className="bg-gray-900/50 border border-gray-800/50 rounded-xl p-4 opacity-60"
+              className="flex items-center justify-between rounded-xl border border-gray-800/70 bg-gray-900/50 p-4"
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-sm">
-                    {listing.amount} {listing.symbol}
-                  </span>
-                  <span className="text-xs bg-gray-800 px-2 py-0.5 rounded-full text-gray-400">
-                    SOLD
-                  </span>
-                </div>
-                <span className="text-sm text-gray-500">
-                  {(listing.amount * listing.pricePerTokenHbar).toFixed(2)} HBAR
-                </span>
+              <div>
+                <p className="text-sm font-medium text-gray-300">
+                  {listing.amount} {listing.symbol}
+                </p>
+                <p className="font-mono text-xs text-gray-600">{listing.tokenId}</p>
               </div>
+              <span className="rounded-full bg-gray-800 px-2.5 py-1 text-xs font-semibold text-gray-400">
+                SOLD
+              </span>
             </div>
           ))}
         </div>

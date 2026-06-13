@@ -1,0 +1,242 @@
+import { useMemo, useState } from "react";
+import {
+  ArrowUpDown,
+  BarChart3,
+  CloudSun,
+  Loader2,
+  Search,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
+import { ENSIdentity } from "../components/ENSIntegration";
+
+function planIcon(plan) {
+  const label = `${plan.name || ""} ${plan.description || ""}`.toLowerCase();
+  if (label.includes("weather")) return CloudSun;
+  if (label.includes("ai") || label.includes("summar")) return Sparkles;
+  return BarChart3;
+}
+
+function getSupply(plan) {
+  return plan.availableSupply ?? plan.remainingSupply ?? plan.supply ?? plan.totalSupply ?? 0;
+}
+
+export default function ExplorePage({
+  plans,
+  userTokens,
+  setUserTokens,
+  apiKeys,
+  setApiKeys,
+  addActivity,
+}) {
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState("low");
+  const [amounts, setAmounts] = useState({});
+  const [loading, setLoading] = useState(null);
+
+  const visiblePlans = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return [...plans]
+      .filter((plan) => {
+        if (!normalized) return true;
+        return [plan.name, plan.description, plan.symbol, plan.ensName, plan.tokenId]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(normalized));
+      })
+      .sort((a, b) => {
+        if (sort === "high") return b.pricePerTokenHbar - a.pricePerTokenHbar;
+        if (sort === "newest") return String(b.tokenId).localeCompare(String(a.tokenId));
+        return a.pricePerTokenHbar - b.pricePerTokenHbar;
+      });
+  }, [plans, query, sort]);
+
+  const buyTokens = async (plan) => {
+    const amount = Math.max(1, Number(amounts[plan.tokenId] ?? 5));
+    if (!Number.isFinite(amount)) return;
+    setLoading(plan.tokenId);
+
+    try {
+      await fetch("/api/buy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tokenId: plan.tokenId,
+          amount,
+          pricePerTokenHbar: plan.pricePerTokenHbar,
+        }),
+      });
+
+      setUserTokens((prev) => ({
+        ...prev,
+        [plan.tokenId]: (prev[plan.tokenId] || 0) + amount,
+      }));
+
+      const keyRes = await fetch("/api/generate-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokenId: plan.tokenId }),
+      });
+      const keyData = await keyRes.json();
+      setApiKeys((prev) => ({ ...prev, [plan.tokenId]: keyData }));
+
+      addActivity({
+        type: "buy",
+        message: `Bought ${amount} ${plan.symbol} tokens for ${(amount * plan.pricePerTokenHbar).toFixed(2)} HBAR`,
+        tokenId: plan.tokenId,
+      });
+    } catch (err) {
+      console.error(err);
+    }
+
+    setLoading(null);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-400">
+            Explore
+          </p>
+          <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">
+            API Marketplace
+          </h2>
+          <p className="mt-1 text-sm text-gray-400">
+            Discover and purchase tokenized API access.
+          </p>
+        </div>
+        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-sm text-emerald-300">
+          <ShieldCheck className="h-4 w-4" />
+          Hedera HTS access tokens
+        </div>
+      </div>
+
+      <div className="grid gap-3 rounded-2xl border border-gray-800 bg-gray-900/70 p-3 shadow-2xl shadow-black/20 sm:grid-cols-[1fr_220px]">
+        <label className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            className="h-11 w-full rounded-xl border border-gray-800 bg-gray-950 pl-10 pr-3 text-sm text-white outline-none transition focus:border-emerald-500"
+            placeholder="Search APIs, providers, symbols..."
+          />
+        </label>
+        <label className="relative">
+          <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+          <select
+            value={sort}
+            onChange={(event) => setSort(event.target.value)}
+            className="h-11 w-full appearance-none rounded-xl border border-gray-800 bg-gray-950 pl-10 pr-8 text-sm text-white outline-none transition focus:border-emerald-500"
+          >
+            <option value="low">Price: Low to High</option>
+            <option value="high">Price: High to Low</option>
+            <option value="newest">Newest</option>
+          </select>
+        </label>
+      </div>
+
+      {visiblePlans.length === 0 ? (
+        <div className="rounded-2xl border border-gray-800 bg-gray-900/70 p-10 text-center">
+          <BarChart3 className="mx-auto h-10 w-10 text-gray-700" />
+          <p className="mt-4 text-sm text-gray-400">No API plans found.</p>
+        </div>
+      ) : (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {visiblePlans.map((plan) => {
+            const Icon = planIcon(plan);
+            const amountValue = amounts[plan.tokenId] ?? "5";
+            const numericAmount = Number(amountValue);
+            const amount = Number.isFinite(numericAmount) && numericAmount > 0 ? numericAmount : 0;
+            const owned = userTokens[plan.tokenId] || 0;
+            const cost = amount * plan.pricePerTokenHbar;
+
+            return (
+              <article
+                key={plan.tokenId}
+                className="group rounded-2xl border border-gray-800 bg-gray-900/80 p-4 shadow-xl shadow-black/10 transition hover:border-emerald-500/30"
+              >
+                <div className="flex items-start gap-4">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-500/10">
+                    <Icon className="h-5 w-5 text-emerald-300" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-base font-semibold text-white">{plan.name}</h3>
+                        <p className="mt-1 line-clamp-2 text-sm leading-5 text-gray-400">
+                          {plan.description || `${plan.symbol} access plan`}
+                        </p>
+                      </div>
+                      {owned > 0 && (
+                        <span className="rounded-full border border-blue-500/20 bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-300">
+                          Own {owned}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="mt-4 grid gap-1.5 text-sm text-gray-400">
+                      <p>
+                        Provider:{" "}
+                        <ENSIdentity ensName={plan.ensName || "provider.eth"} />
+                      </p>
+                      <p>
+                        Token: <span className="font-medium text-white">{plan.symbol}</span>{" "}
+                        <span className="font-mono text-gray-500">{plan.tokenId}</span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-3 rounded-xl border border-gray-800 bg-gray-950 p-3 sm:grid-cols-[0.8fr_0.8fr_1.45fr]">
+                  <div className="min-w-0">
+                    <p className="text-xs text-gray-500">Price</p>
+                    <p className="mt-1 text-lg font-semibold leading-none text-white">
+                      {plan.pricePerTokenHbar} <span className="text-sm text-gray-500">HBAR</span>
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500">per call</p>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-gray-500">Available</p>
+                    <p className="mt-1 text-lg font-semibold leading-none text-white">{getSupply(plan)}</p>
+                    <p className="mt-1 text-xs text-gray-500">tokens</p>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-stretch gap-2">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={amountValue}
+                        onChange={(event) =>
+                          setAmounts((prev) => ({
+                            ...prev,
+                            [plan.tokenId]: event.target.value.replace(/[^\d]/g, ""),
+                          }))
+                        }
+                        className="h-10 w-16 rounded-lg border border-gray-800 bg-gray-900 px-3 text-center text-sm font-semibold text-white outline-none transition focus:border-emerald-500"
+                        aria-label={`Amount of ${plan.symbol} tokens to buy`}
+                      />
+                      <button
+                        onClick={() => buyTokens(plan)}
+                        disabled={loading === plan.tokenId || amount < 1}
+                        className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {loading === plan.tokenId && <Loader2 className="h-4 w-4 animate-spin" />}
+                        {loading === plan.tokenId ? "Buying..." : `Buy ${cost.toFixed(2)} HBAR`}
+                      </button>
+                    </div>
+                    {apiKeys[plan.tokenId] && (
+                      <p className="mt-2 truncate text-xs text-emerald-300">
+                        API key ready in My APIs
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
