@@ -5,7 +5,7 @@ import { ENSInput } from "../components/ENSIntegration";
 export default function ProviderPage({ plans, setPlans, addActivity }) {
   const [name, setName] = useState("AI Summarizer API");
   const [symbol, setSymbol] = useState("AISUM");
-  const [supply, setSupply] = useState(1000);
+  const [supply, setSupply] = useState(10);
   const [price, setPrice] = useState(0.1);
   const [loading, setLoading] = useState(false);
   const [ensName, setEnsName] = useState("");

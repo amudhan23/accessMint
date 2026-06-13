@@ -11,6 +11,7 @@ import ProviderPage from "./pages/ProviderPage";
 import UserPage from "./pages/UserPage";
 import MarketplacePage from "./pages/MarketplacePage";
 import ActivityLog from "./components/ActivityLog";
+import { useEffect } from "react";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("user");
@@ -18,6 +19,15 @@ export default function App() {
   const [userTokens, setUserTokens] = useState({});
   const [listings, setListings] = useState([]);
   const [activity, setActivity] = useState([]);
+
+  useEffect(() => {
+    fetch("/api/plans")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setPlans(data);
+      })
+      .catch(console.error);
+  }, []);
 
   const addActivity = (entry) => {
     setActivity((prev) => [

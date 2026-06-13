@@ -54,6 +54,30 @@ async function init() {
   redemptionTopicId = await createRedemptionLog();
   marketplaceTopicId = await createMarketplaceTopic();
 
+  const plan1 = await createAccessPlan({
+    name: "Crypto Price Intelligence",
+    symbol: "CRYPTO",
+    totalSupply: 10,
+    pricePerTokenHbar: 0.1,
+  });
+  plan1.ensName = "cryptointel.eth";
+  plan1.apiEndpoint =
+    "https://api.coingecko.com/api/v3/simple/price?ids={query}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true";
+  plan1.description = "Real-time crypto prices, market cap, 24h changes";
+  plans[plan1.tokenId] = plan1;
+
+  const plan2 = await createAccessPlan({
+    name: "Weather Intelligence API",
+    symbol: "WTHR",
+    totalSupply: 10,
+    pricePerTokenHbar: 0.05,
+  });
+  plan2.ensName = "weatherapi.eth";
+  plan2.apiEndpoint =
+    "https://geocoding-api.open-meteo.com/v1/search?name={query}&count=1";
+  plan2.description = "Global weather data for any city";
+  plans[plan2.tokenId] = plan2;
+
   console.log("\n✅ Server ready!\n");
 }
 
