@@ -5,7 +5,12 @@
 // ============================================================
 import express from "express";
 import cors from "cors";
-import { AccountCreateTransaction, Hbar, PrivateKey } from "@hashgraph/sdk";
+import {
+  AccountCreateTransaction,
+  Hbar,
+  PrivateKey,
+  AccountId,
+} from "@hashgraph/sdk";
 import { getClient } from "./hedera/client.js";
 import { createAccessPlan } from "./hedera/create-plan.js";
 import {
@@ -35,50 +40,133 @@ let marketplaceTopicId = null;
 let demoUser = null; // simulated user account
 let plans = {};
 const apiKeys = {};
+const users = {};
+
+const STATE_FILE = "./state.json";
+
+function saveState() {
+  const state = {
+    users: {},
+    plans,
+    apiKeys,
+  };
+  // Save user accounts (including private keys for demo only)
+  for (const [key, user] of Object.entries(users)) {
+    state.users[key] = {
+      accountId: user.accountId.toString(),
+      privateKey: user.privateKey.toStringRaw(),
+      name: user.name,
+    };
+  }
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+}
+
+function loadState() {
+  try {
+    if (!fs.existsSync(STATE_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+    console.log("   ✅ State restored from file");
+    return data;
+  } catch (e) {
+    console.log("   ℹ No saved state, starting fresh");
+    return null;
+  }
+}
 
 // Initialize on startup
 async function init() {
   console.log("🚀 Initializing AccessMint server...\n");
 
   const { client } = getClient();
+  const saved = loadState();
 
-  // Create demo user account
-  const userKey = PrivateKey.generateED25519();
-  const userTx = new AccountCreateTransaction()
-    .setKey(userKey.publicKey)
-    .setInitialBalance(new Hbar(100));
-  const userResponse = await userTx.execute(client);
-  const userReceipt = await userResponse.getReceipt(client);
-  demoUser = { accountId: userReceipt.accountId, privateKey: userKey };
-  console.log(`   ✅ Demo user: ${demoUser.accountId}`);
+  if (saved && saved.users?.alice) {
+    console.log("   📂 Restoring previous session...\n");
 
-  // Create HCS topics
+    const aliceKey = PrivateKey.fromStringED25519(saved.users.alice.privateKey);
+    users["alice"] = {
+      accountId: AccountId.fromString(saved.users.alice.accountId),
+      privateKey: aliceKey,
+      name: "Alice",
+    };
+
+    const bobKey = PrivateKey.fromStringED25519(saved.users.bob.privateKey);
+    users["bob"] = {
+      accountId: AccountId.fromString(saved.users.bob.accountId),
+      privateKey: bobKey,
+      name: "Bob",
+    };
+
+    demoUser = users["alice"];
+    Object.assign(plans, saved.plans || {});
+    Object.assign(apiKeys, saved.apiKeys || {});
+
+    console.log(`   ✅ Alice: ${users["alice"].accountId}`);
+    console.log(`   ✅ Bob: ${users["bob"].accountId}`);
+    console.log(`   ✅ Plans: ${Object.keys(plans).length}`);
+  } else {
+    console.log("   🆕 Creating fresh accounts...\n");
+
+    const aliceKey = PrivateKey.generateED25519();
+    const aliceTx = new AccountCreateTransaction()
+      .setKey(aliceKey.publicKey)
+      .setInitialBalance(new Hbar(1));
+    const aliceRes = await aliceTx.execute(client);
+    const aliceReceipt = await aliceRes.getReceipt(client);
+    users["alice"] = {
+      accountId: aliceReceipt.accountId,
+      privateKey: aliceKey,
+      name: "Alice",
+    };
+    console.log(`   ✅ Alice: ${users["alice"].accountId}`);
+
+    const bobKey = PrivateKey.generateED25519();
+    const bobTx = new AccountCreateTransaction()
+      .setKey(bobKey.publicKey)
+      .setInitialBalance(new Hbar(1));
+    const bobRes = await bobTx.execute(client);
+    const bobReceipt = await bobRes.getReceipt(client);
+    users["bob"] = {
+      accountId: bobReceipt.accountId,
+      privateKey: bobKey,
+      name: "Bob",
+    };
+    console.log(`   ✅ Bob: ${users["bob"].accountId}`);
+
+    demoUser = users["alice"];
+
+    console.log("\n🏭 Creating demo API providers...\n");
+
+    const plan1 = await createAccessPlan({
+      name: "Crypto Price Intelligence",
+      symbol: "CRYPTO",
+      totalSupply: 10,
+      pricePerTokenHbar: 0.1,
+    });
+    plan1.ensName = "cryptointel.eth";
+    plan1.apiEndpoint =
+      "https://api.coingecko.com/api/v3/simple/price?ids={query}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true";
+    plan1.description = "Real-time crypto prices, market cap, 24h changes";
+    plans[plan1.tokenId] = plan1;
+
+    const plan2 = await createAccessPlan({
+      name: "Weather Intelligence API",
+      symbol: "WTHR",
+      totalSupply: 10,
+      pricePerTokenHbar: 0.1,
+    });
+    plan2.ensName = "weatherapi.eth";
+    plan2.apiEndpoint =
+      "https://geocoding-api.open-meteo.com/v1/search?name={query}&count=1";
+    plan2.description = "Global weather data for any city";
+    plans[plan2.tokenId] = plan2;
+
+    saveState();
+  }
+
+  // Topics created fresh each restart
   redemptionTopicId = await createRedemptionLog();
   marketplaceTopicId = await createMarketplaceTopic();
-
-  const plan1 = await createAccessPlan({
-    name: "Crypto Price Intelligence",
-    symbol: "CRYPTO",
-    totalSupply: 10,
-    pricePerTokenHbar: 0.1,
-  });
-  plan1.ensName = "cryptointel.eth";
-  plan1.apiEndpoint =
-    "https://api.coingecko.com/api/v3/simple/price?ids={query}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true";
-  plan1.description = "Real-time crypto prices, market cap, 24h changes";
-  plans[plan1.tokenId] = plan1;
-
-  const plan2 = await createAccessPlan({
-    name: "Weather Intelligence API",
-    symbol: "WTHR",
-    totalSupply: 10,
-    pricePerTokenHbar: 0.05,
-  });
-  plan2.ensName = "weatherapi.eth";
-  plan2.apiEndpoint =
-    "https://geocoding-api.open-meteo.com/v1/search?name={query}&count=1";
-  plan2.description = "Global weather data for any city";
-  plans[plan2.tokenId] = plan2;
 
   console.log("\n✅ Server ready!\n");
 }
@@ -93,6 +181,7 @@ app.post("/api/plans", async (req, res) => {
     plans[plan.tokenId] = plan;
     console.log(`   📡 API endpoint: ${plan.apiEndpoint || "none"}`);
     res.json(plan);
+    saveState();
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -126,6 +215,7 @@ app.post("/api/buy", async (req, res) => {
     });
 
     res.json(result);
+    saveState();
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -200,6 +290,7 @@ app.post("/api/verify-worldid", async (req, res) => {
         body: JSON.stringify({
           ...proof,
           action: "marketplace-verify",
+          verification_level: "device",
         }),
       },
     );
@@ -389,6 +480,22 @@ app.post("/api/generate-key", async (req, res) => {
     body: { query: "bitcoin" },
     example_curl: `curl -X POST http://localhost:3001/v1/call -H "Authorization: Bearer ${apiKey}" -H "Content-Type: application/json" -d '{"query":"bitcoin"}'`,
   });
+  saveState();
+});
+
+app.post("/api/switch-user", (req, res) => {
+  const { userId } = req.body;
+  if (users[userId]) {
+    demoUser = users[userId];
+    console.log(`   👤 Switched to ${demoUser.name}`);
+    res.json({ name: demoUser.name, accountId: demoUser.accountId.toString() });
+  } else {
+    res.status(400).json({ error: "Unknown user" });
+  }
+});
+
+app.get("/api/current-user", (req, res) => {
+  res.json({ name: demoUser.name, accountId: demoUser.accountId.toString() });
 });
 
 // The actual API endpoint — called from Postman or user's code
