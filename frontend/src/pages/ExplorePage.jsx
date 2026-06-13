@@ -1,14 +1,22 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowUpDown,
   BarChart3,
   CloudSun,
+  ExternalLink,
   Loader2,
   Search,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { ENSIdentity } from "../components/ENSIntegration";
+import {
+  ENSIdentity,
+  ENSProfileLink,
+} from "../components/ENSIntegration";
+import {
+  normalizeENSName,
+  resolveENSName,
+} from "../components/ensResolver";
 
 function planIcon(plan) {
   const label = `${plan.name || ""} ${plan.description || ""}`.toLowerCase();
@@ -36,12 +44,65 @@ export default function ExplorePage({
   const [amounts, setAmounts] = useState({});
   const [loading, setLoading] = useState(null);
   const [error, setError] = useState("");
+  const [ensLookup, setEnsLookup] = useState({
+    name: "",
+    status: "loading",
+    result: null,
+    error: "",
+  });
+  const ensSearchName = normalizeENSName(query);
+
+  useEffect(() => {
+    if (!ensSearchName) return undefined;
+
+    let cancelled = false;
+
+    const timer = window.setTimeout(() => {
+      setEnsLookup({ name: ensSearchName, status: "loading", result: null, error: "" });
+      resolveENSName(ensSearchName)
+        .then((result) => {
+          if (cancelled) return;
+          setEnsLookup({
+            name: ensSearchName,
+            status: "resolved",
+            result,
+            error: "",
+          });
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setEnsLookup({
+            name: ensSearchName,
+            status: "error",
+            result: null,
+            error: err.message || "ENS lookup failed",
+          });
+        });
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [ensSearchName]);
 
   const visiblePlans = useMemo(() => {
     const normalized = query.trim().toLowerCase();
+    const ensName = ensSearchName;
+    const ensAddress =
+      ensLookup.name === ensSearchName ? ensLookup.result?.address?.toLowerCase() || "" : "";
     return [...plans]
       .filter((plan) => {
         if (!normalized) return true;
+        const providerEns = String(plan.ensName || "").toLowerCase();
+        const providerAddress = String(plan.providerAddress || plan.address || "").toLowerCase();
+        const matchesEnsLookup =
+          ensName &&
+          (providerEns === ensName ||
+            providerEns.includes(ensName) ||
+            (ensAddress && providerAddress === ensAddress));
+        if (matchesEnsLookup) return true;
+
         return [plan.name, plan.description, plan.symbol, plan.ensName, plan.tokenId]
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(normalized));
@@ -51,7 +112,12 @@ export default function ExplorePage({
         if (sort === "newest") return String(b.tokenId).localeCompare(String(a.tokenId));
         return a.pricePerTokenHbar - b.pricePerTokenHbar;
       });
-  }, [plans, query, sort]);
+  }, [ensLookup, ensSearchName, plans, query, sort]);
+
+  const ensLookupStatus =
+    ensSearchName && ensLookup.name === ensSearchName ? ensLookup.status : "loading";
+  const ensLookupResult = ensLookup.name === ensSearchName ? ensLookup.result : null;
+  const ensLookupError = ensLookup.name === ensSearchName ? ensLookup.error : "";
 
   const buyTokens = async (plan) => {
     if (!walletAuthToken) {
@@ -162,6 +228,33 @@ export default function ExplorePage({
         </label>
       </div>
 
+      {ensSearchName && (
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-sm text-blue-100">
+          <span className="font-semibold">ENS lookup</span>
+          {ensLookupStatus === "loading" && (
+            <span className="inline-flex items-center gap-2 text-blue-200">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Resolving {ensSearchName}
+            </span>
+          )}
+          {ensLookupStatus === "resolved" && (
+            <>
+              <ENSProfileLink ensName={ensSearchName} />
+              {ensLookupResult?.address ? (
+                <span className="font-mono text-xs text-blue-200">
+                  {ensLookupResult.address}
+                </span>
+              ) : (
+                <span className="text-blue-200">No address record found</span>
+              )}
+            </>
+          )}
+          {ensLookupStatus === "error" && (
+            <span className="text-red-200">{ensLookupError}</span>
+          )}
+        </div>
+      )}
+
       {error && (
         <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
           {error}
@@ -208,10 +301,24 @@ export default function ExplorePage({
                     </div>
 
                     <div className="mt-4 grid gap-1.5 text-sm text-gray-400">
-                      <p>
-                        Provider:{" "}
-                        <ENSIdentity ensName={plan.ensName || "provider.eth"} />
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-gray-500">Provider</span>
+                        {plan.ensName ? (
+                          <>
+                            <ENSProfileLink ensName={plan.ensName} />
+                            <a
+                              href={`https://app.ens.domains/${plan.ensName}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 transition hover:text-blue-200"
+                            >
+                              profile <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </>
+                        ) : (
+                          <ENSIdentity address={plan.providerAddress} />
+                        )}
+                      </div>
                       <p>
                         Token: <span className="font-medium text-white">{plan.symbol}</span>{" "}
                         <span className="font-mono text-gray-500">{plan.tokenId}</span>

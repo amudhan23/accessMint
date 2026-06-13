@@ -1,5 +1,25 @@
+import { ExternalLink } from "lucide-react";
+import { normalizeENSName } from "./ensResolver";
+
 function truncateAddress(address) {
   return address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Unknown";
+}
+
+export function ENSProfileLink({ ensName, className = "" }) {
+  const normalized = normalizeENSName(ensName);
+  if (!normalized) return null;
+
+  return (
+    <a
+      href={`https://app.ens.domains/${normalized}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`inline-flex items-center gap-1 rounded-full border border-blue-400/20 bg-blue-500/10 px-2.5 py-1 text-xs font-semibold text-blue-200 transition hover:border-blue-300/50 hover:text-white ${className}`}
+    >
+      {normalized}
+      <ExternalLink className="h-3 w-3" />
+    </a>
+  );
 }
 
 export function ENSIdentity({ address, ensName, size = "sm" }) {
