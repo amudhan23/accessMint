@@ -21,6 +21,7 @@ import {
 } from "./hedera/marketplace.js";
 import dotenv from "dotenv";
 import { signRequest } from "@worldcoin/idkit-core/signing";
+import fs from "fs";
 
 dotenv.config();
 
@@ -33,6 +34,7 @@ let redemptionTopicId = null;
 let marketplaceTopicId = null;
 let demoUser = null; // simulated user account
 let plans = {};
+const apiKeys = {};
 
 // Initialize on startup
 async function init() {
@@ -122,34 +124,6 @@ app.post("/api/buy", async (req, res) => {
       amount,
       pricePerTokenHbar,
     });
-
-    res.json(result);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/redeem — Redeem a token for API access
-app.post("/api/redeem", async (req, res) => {
-  try {
-    const { tokenId } = req.body;
-    const { accountId: providerAccountId } = getClient();
-
-    const result = await redeemToken({
-      userAccountId: demoUser.accountId,
-      userPrivateKey: demoUser.privateKey,
-      providerAccountId,
-      tokenId,
-      topicId: redemptionTopicId,
-    });
-
-    // Simulate API response
-    result.apiResponse = {
-      status: 200,
-      data: "This is a summarized version of your document. The key points are...",
-      tokensRemaining: await getTokenBalance(demoUser.accountId, tokenId),
-    };
 
     res.json(result);
   } catch (err) {
@@ -386,6 +360,140 @@ app.post("/api/redeem", async (req, res) => {
     console.error(err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// Generate API key after buying tokens
+app.post("/api/generate-key", async (req, res) => {
+  const { tokenId } = req.body;
+  const plan = plans[tokenId];
+  const apiKey = "ak_" + Math.random().toString(36).slice(2, 15);
+
+  apiKeys[apiKey] = {
+    accountId: demoUser.accountId,
+    privateKey: demoUser.privateKey,
+    tokenId,
+    planName: plan?.name || "Unknown",
+  };
+
+  console.log(`   🔑 API key generated: ${apiKey} → ${plan?.name}`);
+
+  res.json({
+    apiKey,
+    service: plan?.name,
+    endpoint: `http://localhost:3001/v1/call`,
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: { query: "bitcoin" },
+    example_curl: `curl -X POST http://localhost:3001/v1/call -H "Authorization: Bearer ${apiKey}" -H "Content-Type: application/json" -d '{"query":"bitcoin"}'`,
+  });
+});
+
+// The actual API endpoint — called from Postman or user's code
+app.post("/v1/call", async (req, res) => {
+  // Check API key
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({
+      error: "MISSING_API_KEY",
+      message: "Include Authorization: Bearer <your_key>",
+    });
+  }
+
+  const apiKey = authHeader.split(" ")[1];
+  const keyData = apiKeys[apiKey];
+  if (!keyData) {
+    return res
+      .status(401)
+      .json({ error: "INVALID_API_KEY", message: "API key not found" });
+  }
+
+  // Check token balance
+  const balance = await getTokenBalance(keyData.accountId, keyData.tokenId);
+  if (balance <= 0) {
+    return res.status(403).json({
+      error: "NO_TOKENS_REMAINING",
+      message: "You have 0 tokens. Purchase more at AccessMint marketplace.",
+      tokens_remaining: 0,
+      marketplace: "http://localhost:5173/marketplace",
+    });
+  }
+
+  // Burn 1 token
+  const { accountId: providerAccountId } = getClient();
+  await redeemToken({
+    userAccountId: keyData.accountId,
+    userPrivateKey: keyData.privateKey,
+    providerAccountId,
+    tokenId: keyData.tokenId,
+    topicId: redemptionTopicId,
+  });
+
+  // Call the provider's wrapped API
+  const plan = plans[keyData.tokenId];
+  const query = req.body.query || "";
+  let apiData = {};
+
+  if (plan?.apiEndpoint) {
+    try {
+      let apiUrl = plan.apiEndpoint.replace(
+        "{query}",
+        encodeURIComponent(query),
+      );
+      const apiRes = await fetch(apiUrl);
+      const rawData = await apiRes.json();
+
+      if (plan.name.includes("Crypto")) {
+        const coin = query.toLowerCase() || "bitcoin";
+        const coinData = rawData[coin];
+        if (coinData) {
+          apiData = {
+            coin,
+            price_usd: "$" + coinData.usd.toLocaleString(),
+            market_cap:
+              "$" + Math.round(coinData.usd_market_cap).toLocaleString(),
+            change_24h: (coinData.usd_24h_change || 0).toFixed(2) + "%",
+          };
+        } else {
+          apiData = { error: "Coin not found" };
+        }
+      } else if (plan.name.includes("Weather")) {
+        const loc = rawData.results?.[0];
+        if (loc) {
+          const wxRes = await fetch(
+            `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current_weather=true`,
+          );
+          const wxData = await wxRes.json();
+          apiData = {
+            city: loc.name,
+            country: loc.country,
+            temperature: wxData.current_weather.temperature + "°C",
+            wind_speed: wxData.current_weather.windspeed + " km/h",
+          };
+        } else {
+          apiData = { error: "City not found" };
+        }
+      } else {
+        apiData = rawData;
+      }
+    } catch (e) {
+      apiData = { error: "API call failed" };
+    }
+  }
+
+  const newBalance = await getTokenBalance(keyData.accountId, keyData.tokenId);
+
+  res.json({
+    service: plan?.name,
+    provider: plan?.ensName,
+    data: apiData,
+    tokens_remaining: newBalance,
+    token_burned_on_chain: true,
+    verify: `https://hashscan.io/testnet/topic/${redemptionTopicId}`,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Start server

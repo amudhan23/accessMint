@@ -16,6 +16,7 @@ export default function UserPage({
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [queryText, setQueryText] = useState("");
   const [apiResponse, setApiResponse] = useState(null);
+  const [apiKey, setApiKey] = useState(null);
 
   const activePlan = selectedPlan || plans[0];
 
@@ -42,6 +43,14 @@ export default function UserPage({
         message: `Bought ${buyAmount} ${activePlan.symbol} tokens for ${data.totalCost} HBAR`,
         tokenId: activePlan.tokenId,
       });
+
+      const keyRes = await fetch("/api/generate-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokenId: activePlan.tokenId }),
+      });
+      const keyData = await keyRes.json();
+      setApiKey(keyData);
     } catch (err) {
       console.error(err);
     }
@@ -179,6 +188,28 @@ export default function UserPage({
           </div>
         </div>
       </div>
+      {apiKey && (
+        <div className="bg-gray-900 border border-mint-500/20 rounded-2xl p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-mint-400 font-medium">
+              🔑 Your API Key
+            </span>
+          </div>
+          <code className="block bg-gray-800 p-3 rounded-lg text-sm text-white break-all font-mono">
+            {apiKey.apiKey}
+          </code>
+          <div className="space-y-2 text-xs">
+            <p className="text-gray-400">Use in Postman or your code:</p>
+            <div className="bg-gray-800 rounded-lg p-3 space-y-1 font-mono text-gray-300">
+              <p>POST {apiKey.endpoint}</p>
+              <p>Authorization: Bearer {apiKey.apiKey}</p>
+              <p>Content-Type: application/json</p>
+              <p className="text-gray-500 mt-2">Body:</p>
+              <p>{'{ "query": "bitcoin" }'}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Actions Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
