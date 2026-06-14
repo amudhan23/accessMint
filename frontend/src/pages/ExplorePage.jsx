@@ -8,6 +8,7 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
+  WalletCards,
 } from "lucide-react";
 import {
   ENSIdentity,
@@ -29,8 +30,17 @@ function getSupply(plan) {
   return plan.availableSupply ?? plan.remainingSupply ?? plan.supply ?? plan.totalSupply ?? 0;
 }
 
+function formatPurchaseError(message) {
+  const text = message || "Purchase failed";
+  if (text.includes("INSUFFICIENT_ACCOUNT_BALANCE")) {
+    return "Demo payer is low on testnet HBAR. Restart the backend to enable auto top-up, then retry the purchase.";
+  }
+  return text;
+}
+
 export default function ExplorePage({
   plans,
+  setPlans,
   userTokens,
   setUserTokens,
   apiKeys,
@@ -38,10 +48,14 @@ export default function ExplorePage({
   walletAccountId,
   walletAuthToken,
   addActivity,
+  highlightTokenId,
+  onHighlightHandled,
 }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("low");
+  const [filter, setFilter] = useState("all");
   const [amounts, setAmounts] = useState({});
+  const [buyPlan, setBuyPlan] = useState(null);
   const [loading, setLoading] = useState(null);
   const [error, setError] = useState("");
   const [ensLookup, setEnsLookup] = useState({
@@ -86,6 +100,19 @@ export default function ExplorePage({
     };
   }, [ensSearchName]);
 
+  useEffect(() => {
+    if (!highlightTokenId) return undefined;
+
+    const target = document.getElementById(`api-${highlightTokenId}`);
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    const timer = window.setTimeout(() => {
+      onHighlightHandled?.();
+    }, 2600);
+
+    return () => window.clearTimeout(timer);
+  }, [highlightTokenId, onHighlightHandled]);
+
   const visiblePlans = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     const ensName = ensSearchName;
@@ -93,6 +120,10 @@ export default function ExplorePage({
       ensLookup.name === ensSearchName ? ensLookup.result?.address?.toLowerCase() || "" : "";
     return [...plans]
       .filter((plan) => {
+        const owned = Number(userTokens[plan.tokenId] || 0);
+        if (filter === "owned" && owned <= 0) return false;
+        if (filter === "available" && owned > 0) return false;
+
         if (!normalized) return true;
         const providerEns = String(plan.ensName || "").toLowerCase();
         const providerAddress = String(plan.providerAddress || plan.address || "").toLowerCase();
@@ -112,12 +143,46 @@ export default function ExplorePage({
         if (sort === "newest") return String(b.tokenId).localeCompare(String(a.tokenId));
         return a.pricePerTokenHbar - b.pricePerTokenHbar;
       });
-  }, [ensLookup, ensSearchName, plans, query, sort]);
+  }, [ensLookup, ensSearchName, filter, plans, query, sort, userTokens]);
 
   const ensLookupStatus =
     ensSearchName && ensLookup.name === ensSearchName ? ensLookup.status : "loading";
   const ensLookupResult = ensLookup.name === ensSearchName ? ensLookup.result : null;
   const ensLookupError = ensLookup.name === ensSearchName ? ensLookup.error : "";
+  const selectedAmount = buyPlan ? Number(amounts[buyPlan.tokenId] ?? 5) || 0 : 0;
+  const selectedSupply = buyPlan ? Number(getSupply(buyPlan)) || 0 : 0;
+  const selectedTotal = buyPlan ? selectedAmount * Number(buyPlan.pricePerTokenHbar || 0) : 0;
+  const selectedTooHigh = buyPlan && selectedAmount > selectedSupply;
+
+  useEffect(() => {
+    if (!buyPlan) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setBuyPlan(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [buyPlan]);
+
+  const reducePlanSupply = (tokenId, amount, updatedPlan) => {
+    if (!setPlans) return;
+
+    setPlans((previous) =>
+      previous.map((plan) => {
+        if (String(plan.tokenId) !== String(tokenId)) return plan;
+        if (updatedPlan) return { ...plan, ...updatedPlan };
+
+        const nextSupply = Math.max(0, Number(getSupply(plan)) - Number(amount));
+        return {
+          ...plan,
+          remainingSupply: nextSupply,
+        };
+      }),
+    );
+  };
 
   const buyTokens = async (plan) => {
     if (!walletAuthToken) {
@@ -126,6 +191,10 @@ export default function ExplorePage({
     }
     const amount = Math.max(1, Number(amounts[plan.tokenId] ?? 5));
     if (!Number.isFinite(amount)) return;
+    if (amount > Number(getSupply(plan))) {
+      setError(`Only ${getSupply(plan)} ${plan.symbol} calls are available.`);
+      return;
+    }
     setError("");
     setLoading(plan.tokenId);
 
@@ -151,6 +220,7 @@ export default function ExplorePage({
         setUserTokens(buyData.walletState.userTokens || {});
         setApiKeys(buyData.walletState.apiKeys || {});
       }
+      reducePlanSupply(plan.tokenId, amount, buyData.plan);
 
       const keyRes = await fetch("/api/generate-key", {
         method: "POST",
@@ -176,19 +246,34 @@ export default function ExplorePage({
         message: `Bought ${amount} ${plan.symbol} tokens for ${(amount * plan.pricePerTokenHbar).toFixed(2)} HBAR`,
         tokenId: plan.tokenId,
       });
+      setBuyPlan(null);
     } catch (err) {
       console.error(err);
-      setError(err.message || "Purchase failed");
+      setError(formatPurchaseError(err.message));
     }
 
     setLoading(null);
   };
 
+  const filterOptions = [
+    { id: "all", label: "All APIs", count: plans.length },
+    {
+      id: "owned",
+      label: "Owned",
+      count: plans.filter((plan) => Number(userTokens[plan.tokenId] || 0) > 0).length,
+    },
+    {
+      id: "available",
+      label: "Available",
+      count: plans.filter((plan) => Number(userTokens[plan.tokenId] || 0) === 0).length,
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-400">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-400">
             Explore
           </p>
           <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">
@@ -198,7 +283,7 @@ export default function ExplorePage({
             Discover and purchase tokenized API access.
           </p>
         </div>
-        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-sm text-emerald-300">
+        <div className="inline-flex items-center gap-2 rounded-full border border-violet-500/20 bg-violet-500/10 px-3 py-1.5 text-sm text-violet-200">
           <ShieldCheck className="h-4 w-4" />
           {walletAccountId ? "Hedera HTS access tokens" : "Connect wallet to buy"}
         </div>
@@ -210,7 +295,7 @@ export default function ExplorePage({
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            className="h-11 w-full rounded-xl border border-gray-800 bg-gray-950 pl-10 pr-3 text-sm text-white outline-none transition focus:border-emerald-500"
+            className="h-11 w-full rounded-xl border border-gray-800 bg-gray-950 pl-10 pr-3 text-sm text-white outline-none transition focus:border-violet-500"
             placeholder="Search APIs, providers, symbols..."
           />
         </label>
@@ -219,13 +304,37 @@ export default function ExplorePage({
           <select
             value={sort}
             onChange={(event) => setSort(event.target.value)}
-            className="h-11 w-full appearance-none rounded-xl border border-gray-800 bg-gray-950 pl-10 pr-8 text-sm text-white outline-none transition focus:border-emerald-500"
+            className="h-11 w-full appearance-none rounded-xl border border-gray-800 bg-gray-950 pl-10 pr-8 text-sm text-white outline-none transition focus:border-violet-500"
           >
             <option value="low">Price: Low to High</option>
             <option value="high">Price: High to Low</option>
             <option value="newest">Newest</option>
           </select>
         </label>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {filterOptions.map((option) => (
+          <button
+            key={option.id}
+            onClick={() => setFilter(option.id)}
+            className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-sm font-semibold transition ${
+              filter === option.id
+                ? "border-violet-400/60 bg-[linear-gradient(135deg,#57068c,#7c3aed)] text-white shadow-lg shadow-violet-700/25"
+                : "border-gray-800 bg-gray-900/60 text-gray-400 hover:border-violet-400/40 hover:text-white"
+            }`}
+          >
+            {option.id === "owned" && <WalletCards className="h-4 w-4" />}
+            {option.label}
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-xs ${
+                filter === option.id ? "bg-gray-950/10" : "bg-gray-800 text-gray-500"
+              }`}
+            >
+              {option.count}
+            </span>
+          </button>
+        ))}
       </div>
 
       {ensSearchName && (
@@ -270,34 +379,45 @@ export default function ExplorePage({
         <div className="grid gap-4 xl:grid-cols-2">
           {visiblePlans.map((plan) => {
             const Icon = planIcon(plan);
-            const amountValue = amounts[plan.tokenId] ?? "5";
-            const numericAmount = Number(amountValue);
-            const amount = Number.isFinite(numericAmount) && numericAmount > 0 ? numericAmount : 0;
             const owned = userTokens[plan.tokenId] || 0;
-            const cost = amount * plan.pricePerTokenHbar;
+            const hasApiKey = Boolean(apiKeys[plan.tokenId]);
 
             return (
               <article
                 key={plan.tokenId}
-                className="group rounded-2xl border border-gray-800 bg-gray-900/80 p-4 shadow-xl shadow-black/10 transition hover:border-emerald-500/30"
+                id={`api-${plan.tokenId}`}
+                className={`group flex min-h-[258px] scroll-mt-28 flex-col rounded-3xl border bg-gray-900/80 p-5 shadow-xl shadow-black/10 transition ${
+                  highlightTokenId === plan.tokenId
+                    ? "border-violet-300 ring-2 ring-violet-300/40 shadow-violet-950/30"
+                    : "border-gray-800 hover:border-violet-500/30"
+                }`}
               >
                 <div className="flex items-start gap-4">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-500/10">
-                    <Icon className="h-5 w-5 text-emerald-300" />
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-violet-500/20 bg-violet-500/10">
+                    <Icon className="h-5 w-5 text-violet-300" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <h3 className="text-base font-semibold text-white">{plan.name}</h3>
-                        <p className="mt-1 line-clamp-2 text-sm leading-5 text-gray-400">
-                          {plan.description || `${plan.symbol} access plan`}
-                        </p>
+                    <div className="flex min-h-[76px] flex-col justify-between gap-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="truncate text-base font-semibold text-white">{plan.name}</h3>
+                          <p className="mt-1 line-clamp-2 text-sm leading-5 text-gray-400">
+                            {plan.description || `${plan.symbol} access plan`}
+                          </p>
+                        </div>
+                        {owned <= 0 && hasApiKey && (
+                          <span className="shrink-0 rounded-full border border-violet-400/25 bg-violet-500/10 px-2.5 py-1 text-xs font-medium text-violet-200">
+                            Saved key
+                          </span>
+                        )}
                       </div>
-                      {owned > 0 && (
-                        <span className="rounded-full border border-blue-500/20 bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-300">
-                          Own {owned}
-                        </span>
-                      )}
+                      <div className="flex min-h-7 flex-wrap items-center gap-2">
+                        {owned > 0 && (
+                          <span className="rounded-full border border-blue-500/20 bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-300">
+                            Own {owned}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="mt-4 grid gap-1.5 text-sm text-gray-400">
@@ -327,7 +447,7 @@ export default function ExplorePage({
                   </div>
                 </div>
 
-                <div className="mt-5 grid gap-3 rounded-xl border border-gray-800 bg-gray-950 p-3 sm:grid-cols-[0.8fr_0.8fr_1.45fr]">
+                <div className="mt-auto grid gap-4 rounded-2xl border border-gray-800 bg-gray-950 p-4 sm:grid-cols-[0.8fr_0.8fr_auto]">
                   <div className="min-w-0">
                     <p className="text-xs text-gray-500">Price</p>
                     <p className="mt-1 text-lg font-semibold leading-none text-white">
@@ -340,38 +460,17 @@ export default function ExplorePage({
                     <p className="mt-1 text-lg font-semibold leading-none text-white">{getSupply(plan)}</p>
                     <p className="mt-1 text-xs text-gray-500">tokens</p>
                   </div>
-                  <div className="min-w-0">
-                    <div className="flex items-stretch gap-2">
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        value={amountValue}
-                        onChange={(event) =>
-                          setAmounts((prev) => ({
-                            ...prev,
-                            [plan.tokenId]: event.target.value.replace(/[^\d]/g, ""),
-                          }))
-                        }
-                        className="h-10 w-16 rounded-lg border border-gray-800 bg-gray-900 px-3 text-center text-sm font-semibold text-white outline-none transition focus:border-emerald-500"
-                        aria-label={`Amount of ${plan.symbol} tokens to buy`}
-                      />
-                      <button
-                        onClick={() => buyTokens(plan)}
-                        disabled={!walletAuthToken || loading === plan.tokenId || amount < 1}
-                        className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {loading === plan.tokenId && <Loader2 className="h-4 w-4 animate-spin" />}
-                        {!walletAuthToken
-                          ? "Sign In"
-                          : loading === plan.tokenId
-                            ? "Buying..."
-                            : `Buy ${cost.toFixed(2)} HBAR`}
-                      </button>
-                    </div>
-                    {apiKeys[plan.tokenId] && (
+                  <div className="min-w-0 sm:min-w-32">
+                    <button
+                      onClick={() => setBuyPlan(plan)}
+                      disabled={!walletAuthToken}
+                      className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-[linear-gradient(135deg,#5f1bb7,#7c3aed)] px-4 text-sm font-semibold text-white shadow-lg shadow-violet-700/25 transition hover:-translate-y-0.5 hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {walletAuthToken ? "Buy" : "Sign In"}
+                    </button>
+                    {hasApiKey && owned > 0 && (
                       <p className="mt-2 truncate text-xs text-emerald-300">
-                        API key ready in My APIs
+                        {owned} active calls in My APIs
                       </p>
                     )}
                   </div>
@@ -379,6 +478,160 @@ export default function ExplorePage({
               </article>
             );
           })}
+        </div>
+      )}
+
+      {buyPlan && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm"
+          onClick={() => setBuyPlan(null)}
+        >
+          <div
+            className="w-full max-w-2xl overflow-hidden rounded-[2rem] border border-gray-800 bg-gray-950 shadow-2xl shadow-black"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="border-b border-gray-800 bg-[linear-gradient(135deg,rgba(95,27,183,0.20),rgba(124,58,237,0.08))] p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-300">
+                    Purchase access
+                  </p>
+                  <h3 className="mt-2 text-2xl font-semibold text-white">{buyPlan.name}</h3>
+                  <p className="mt-1 text-sm text-gray-500">{buyPlan.description}</p>
+                </div>
+                <button
+                  onClick={() => setBuyPlan(null)}
+                  className="rounded-full border border-gray-800 px-3 py-1.5 text-sm font-semibold text-gray-400 transition hover:border-violet-400/40 hover:text-white"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-5 p-6">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-gray-800 bg-gray-900/70 p-4">
+                  <p className="text-xs text-gray-500">You own</p>
+                  <p className="mt-2 text-2xl font-semibold text-white">
+                    {userTokens[buyPlan.tokenId] || 0}
+                  </p>
+                  <p className="text-xs text-gray-500">{buyPlan.symbol} calls</p>
+                </div>
+                <div className="rounded-2xl border border-gray-800 bg-gray-900/70 p-4">
+                  <p className="text-xs text-gray-500">Price</p>
+                  <p className="mt-2 text-2xl font-semibold text-white">
+                    {buyPlan.pricePerTokenHbar}
+                  </p>
+                  <p className="text-xs text-gray-500">HBAR per call</p>
+                </div>
+                <div className="rounded-2xl border border-gray-800 bg-gray-900/70 p-4">
+                  <p className="text-xs text-gray-500">Available</p>
+                  <p className="mt-2 text-2xl font-semibold text-white">{getSupply(buyPlan)}</p>
+                  <p className="text-xs text-gray-500">provider supply</p>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-violet-500/25 bg-violet-500/10 p-5">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-violet-100">Calls to buy</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Choose prepaid API calls. Inventory updates after purchase.
+                    </p>
+                  </div>
+                  <div className="flex items-center rounded-2xl border border-gray-800 bg-gray-950 p-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAmounts((prev) => ({
+                          ...prev,
+                          [buyPlan.tokenId]: String(Math.max(1, selectedAmount - 1)),
+                        }))
+                      }
+                      className="flex h-10 w-10 items-center justify-center rounded-xl text-lg font-semibold text-gray-400 transition hover:bg-violet-500/10 hover:text-violet-100"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={amounts[buyPlan.tokenId] ?? "5"}
+                      onChange={(event) =>
+                        setAmounts((prev) => ({
+                          ...prev,
+                          [buyPlan.tokenId]: event.target.value.replace(/[^\d]/g, ""),
+                        }))
+                      }
+                      className="h-10 w-20 bg-transparent text-center text-xl font-semibold text-white outline-none"
+                      aria-label={`Amount of ${buyPlan.symbol} tokens to buy`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAmounts((prev) => ({
+                          ...prev,
+                          [buyPlan.tokenId]: String(Math.min(selectedSupply, selectedAmount + 1)),
+                        }))
+                      }
+                      className="flex h-10 w-10 items-center justify-center rounded-xl text-lg font-semibold text-gray-400 transition hover:bg-violet-500/10 hover:text-violet-100"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-4 gap-2">
+                  {[1, 5, 10, 25].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() =>
+                        setAmounts((prev) => ({
+                          ...prev,
+                          [buyPlan.tokenId]: String(preset),
+                        }))
+                      }
+                      disabled={preset > selectedSupply}
+                      className={`rounded-xl border px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                        selectedAmount === preset
+                          ? "border-violet-300/70 bg-violet-500/25 text-white"
+                          : "border-gray-800 bg-gray-950 text-violet-200 hover:border-violet-400/60"
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                {selectedTooHigh && (
+                  <p className="mt-3 text-xs font-medium text-red-200">
+                    Only {selectedSupply} {buyPlan.symbol} calls are available.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-3 rounded-3xl border border-gray-800 bg-gray-900/70 p-5 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">Estimated total</p>
+                  <p className="mt-1 text-2xl font-semibold text-white">
+                    {selectedTotal.toFixed(2)}{" "}
+                    <span className="text-sm text-gray-500">HBAR</span>
+                  </p>
+                </div>
+                <button
+                  onClick={() => buyTokens(buyPlan)}
+                  disabled={
+                    loading === buyPlan.tokenId ||
+                    !selectedAmount ||
+                    selectedTooHigh
+                  }
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[linear-gradient(135deg,#5f1bb7,#7c3aed)] px-6 text-sm font-semibold text-white shadow-lg shadow-violet-700/25 transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loading === buyPlan.tokenId && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {loading === buyPlan.tokenId ? "Buying..." : "Confirm buy"}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import {
   Activity,
-  BadgeCheck,
   Coins,
   Layers3,
   ListPlus,
+  Moon,
+  Sun,
   Store,
   WalletCards,
 } from "lucide-react";
@@ -31,6 +32,8 @@ export default function App() {
   const [apiKeys, setApiKeys] = useState({});
   const [listings, setListings] = useState([]);
   const [activity, setActivity] = useState([]);
+  const [theme, setTheme] = useState(() => localStorage.getItem("accessmint-theme") || "dark");
+  const [highlightTokenId, setHighlightTokenId] = useState("");
 
   useEffect(() => {
     fetch("/api/plans")
@@ -83,58 +86,104 @@ export default function App() {
     ]);
   };
 
+  const isLight = theme === "light";
+
+  const toggleTheme = () => {
+    setTheme((current) => {
+      const next = current === "dark" ? "light" : "dark";
+      localStorage.setItem("accessmint-theme", next);
+      return next;
+    });
+  };
+
+  const openExploreToken = (tokenId) => {
+    setHighlightTokenId(String(tokenId || ""));
+    setActiveTab("explore");
+  };
+
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      <header className="sticky top-0 z-50 border-b border-gray-800/80 bg-gray-950/90 backdrop-blur-xl">
-        <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <div
+      className={`min-h-screen overflow-x-hidden transition-colors ${
+        isLight
+          ? "bg-[#f7f0ff] text-gray-950"
+          : "bg-[#07040f] text-white"
+      }`}
+      data-theme={theme}
+    >
+      <header
+        className={`sticky top-0 z-50 border-b backdrop-blur-2xl ${
+          isLight
+            ? "border-violet-200/70 bg-[#fff8ff]/75"
+            : "border-violet-500/10 bg-[#07040f]/75"
+        }`}
+      >
+        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6">
+          <div className="grid gap-4 lg:grid-cols-[260px_1fr_auto] lg:items-center">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-400/10 shadow-lg shadow-emerald-950">
-                <Coins className="h-5 w-5 text-emerald-300" />
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-violet-400/25 bg-violet-500/10 shadow-lg shadow-violet-950/40">
+                <Coins className="h-5 w-5 text-violet-300" />
               </div>
               <div>
-                <h1 className="text-xl font-semibold tracking-tight">
+                <h1 className="text-lg font-semibold tracking-tight">
                   AccessMint
                 </h1>
-                <p className="text-xs text-gray-500">
+                <p className={`text-xs ${isLight ? "text-gray-500" : "text-gray-500"}`}>
                   Tokenized API Access on Hedera
                 </p>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
-                <BadgeCheck className="h-4 w-4" />
-                Testnet
-              </span>
+            <nav
+              className={`flex gap-1 overflow-x-auto rounded-2xl border p-1 ${
+                isLight
+                  ? "border-violet-200/70 bg-white/50"
+                  : "border-violet-500/10 bg-white/[0.035]"
+              }`}
+            >
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                    activeTab === tab.id
+                      ? isLight
+                        ? "bg-[linear-gradient(135deg,#57068c,#7c3aed)] text-white shadow-lg shadow-violet-700/25"
+                        : "bg-[linear-gradient(135deg,#57068c,#7c3aed)] text-white shadow-lg shadow-violet-700/25"
+                      : isLight
+                        ? "text-slate-500 hover:bg-white/70 hover:text-violet-950"
+                        : "text-gray-500 hover:bg-white/5 hover:text-violet-100"
+                  }`}
+                >
+                  <tab.icon className="h-4 w-4" />
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+
+            <div className="flex justify-start gap-2 lg:justify-end">
+              <button
+                onClick={toggleTheme}
+                className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border transition ${
+                  isLight
+                    ? "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                    : "border-white/10 bg-white/[0.03] text-gray-300 hover:bg-white/10"
+                }`}
+                title={isLight ? "Switch to dark mode" : "Switch to light mode"}
+              >
+                {isLight ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+              </button>
               <WalletButton />
             </div>
           </div>
-
-          <nav className="mt-3 flex gap-1 overflow-x-auto rounded-xl border border-gray-800 bg-gray-900/70 p-1">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
-                  activeTab === tab.id
-                    ? "bg-gray-800 text-emerald-300 shadow-inner"
-                    : "text-gray-500 hover:bg-gray-800/60 hover:text-gray-200"
-                }`}
-              >
-                <tab.icon className="h-4 w-4" />
-                {tab.label}
-              </button>
-            ))}
-          </nav>
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <main className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <section className="min-w-0">
           {activeTab === "explore" && (
             <ExplorePage
               plans={plans}
+              setPlans={setPlans}
               userTokens={userTokens}
               setUserTokens={setUserTokens}
               apiKeys={apiKeys}
@@ -142,6 +191,8 @@ export default function App() {
               walletAccountId={accountId?.toString()}
               walletAuthToken={authToken}
               addActivity={addActivity}
+              highlightTokenId={highlightTokenId}
+              onHighlightHandled={() => setHighlightTokenId("")}
             />
           )}
           {activeTab === "user" && (
@@ -165,6 +216,8 @@ export default function App() {
               setApiKeys={setApiKeys}
               walletAuthToken={authToken}
               addActivity={addActivity}
+              plans={plans}
+              onExploreToken={openExploreToken}
             />
           )}
           {activeTab === "provider" && (
@@ -181,7 +234,11 @@ export default function App() {
         </aside>
       </main>
 
-      <footer className="border-t border-gray-900 px-4 py-6 text-center text-sm text-gray-600">
+      <footer
+        className={`mt-24 border-t px-4 py-10 text-center text-sm ${
+          isLight ? "border-gray-200 text-gray-500" : "border-white/10 text-gray-600"
+        }`}
+      >
         <span className="inline-flex items-center gap-2">
           <Activity className="h-4 w-4" />
           Powered by Hedera Token Service and Consensus Service

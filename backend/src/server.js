@@ -7,10 +7,12 @@ import express from "express";
 import cors from "cors";
 import {
   AccountCreateTransaction,
+  AccountBalanceQuery,
   AccountInfoFlow,
   Hbar,
   PrivateKey,
   AccountId,
+  TransferTransaction,
 } from "@hashgraph/sdk";
 import { getClient } from "./hedera/client.js";
 import { createAccessPlan } from "./hedera/create-plan.js";
@@ -51,6 +53,22 @@ const walletSessions = new Map();
 const STATE_FILE = "./state.json";
 const AUTH_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const WALLET_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const TINYBARS_PER_HBAR = 100_000_000n;
+const DEMO_BUYER_MIN_HBAR = 1.25;
+const DEMO_BUYER_HBAR_BUFFER = 0.75;
+const WORLD_ID_ACTION = process.env.WORLD_ID_ACTION || "marketplaceverify";
+const WORLD_ID_ENVIRONMENT = process.env.WORLD_ID_ENVIRONMENT || "staging";
+const WORLD_ID_APP_ID =
+  process.env.WORLD_APP_ID || process.env.WORLD_ID_APP_ID || "";
+const WORLD_ID_VERIFY_BASE_URL =
+  process.env.WORLD_ID_VERIFY_BASE_URL || "https://developer.world.org";
+const WORLD_ID_V2_VERIFY_BASE_URLS = (
+  process.env.WORLD_ID_V2_VERIFY_BASE_URLS ||
+  "https://developer.worldcoin.org,https://developer.world.org"
+)
+  .split(",")
+  .map((url) => url.trim())
+  .filter(Boolean);
 
 function saveState() {
   const state = {
@@ -165,6 +183,163 @@ function getWalletState(walletAccountId) {
   };
 }
 
+function getWalletTokenBalance(walletAccountId, tokenId) {
+  const profile = ensureWalletProfile(walletAccountId);
+  return Number(profile.tokenBalances?.[tokenId] || 0);
+}
+
+function hbarToTinybars(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return 0n;
+  return BigInt(Math.ceil(numericValue * Number(TINYBARS_PER_HBAR)));
+}
+
+function tinybarsToHbarNumber(tinybars) {
+  return Number(tinybars) / Number(TINYBARS_PER_HBAR);
+}
+
+async function ensureDemoBuyerFunding(requiredHbar = 0) {
+  if (!demoUser?.accountId) return;
+
+  const { client, accountId: operatorAccountId } = getClient();
+  const balance = await new AccountBalanceQuery()
+    .setAccountId(demoUser.accountId)
+    .execute(client);
+  const currentTinybars = BigInt(balance.hbars.toTinybars().toString());
+  const targetHbar = Math.max(
+    DEMO_BUYER_MIN_HBAR,
+    Number(requiredHbar || 0) + DEMO_BUYER_HBAR_BUFFER,
+  );
+  const targetTinybars = hbarToTinybars(targetHbar);
+
+  if (currentTinybars >= targetTinybars) return;
+
+  const topUpTinybars = targetTinybars - currentTinybars;
+  const topUpHbar = Number(tinybarsToHbarNumber(topUpTinybars).toFixed(8));
+  const response = await new TransferTransaction()
+    .addHbarTransfer(operatorAccountId, new Hbar(-topUpHbar))
+    .addHbarTransfer(demoUser.accountId, new Hbar(topUpHbar))
+    .execute(client);
+
+  await response.getReceipt(client);
+  console.log(
+    `   Demo buyer ${demoUser.accountId} topped up with ${topUpHbar} HBAR`,
+  );
+}
+
+function getClaimedSupply(tokenId) {
+  const walletHeld = Object.values(walletProfiles || {}).reduce(
+    (total, profile) => total + Number(profile?.tokenBalances?.[tokenId] || 0),
+    0,
+  );
+  const listed = secondaryListings.reduce((total, listing) => {
+    if (!listing.active || String(listing.tokenId) !== String(tokenId)) {
+      return total;
+    }
+    return total + Number(listing.amount || 0);
+  }, 0);
+
+  return walletHeld + listed;
+}
+
+function normalizePlanSupplyState() {
+  let changed = false;
+
+  for (const [tokenId, plan] of Object.entries(plans)) {
+    const totalSupply = Number(plan.totalSupply ?? plan.supply ?? 0);
+    const savedSupply = Number(plan.remainingSupply);
+    if (Number.isFinite(savedSupply)) continue;
+
+    plan.remainingSupply = Math.max(0, totalSupply - getClaimedSupply(tokenId));
+    changed = true;
+  }
+
+  return changed;
+}
+
+async function verifyWorldIdV4Proof({ verifierId, proofPayload }) {
+  const verifyRes = await fetch(
+    `${WORLD_ID_VERIFY_BASE_URL}/api/v4/verify/${encodeURIComponent(verifierId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(proofPayload),
+    },
+  );
+  const result = await verifyRes.json().catch(() => ({}));
+  const successfulResult = result.results?.find((item) => item.success);
+  const verified =
+    verifyRes.ok && (result.success === true || Boolean(successfulResult));
+
+  return {
+    verified,
+    result,
+    successfulResult,
+    endpoint: verifierId.startsWith("app_") ? "v4-app" : "v4-rp",
+  };
+}
+
+async function verifyWorldIdV2Proof({ appId, idkitResponse }) {
+  const legacyResponse =
+    idkitResponse.responses?.find((response) => response.merkle_root || response.root) ||
+    idkitResponse.responses?.[0] ||
+    {};
+  const v2Payload = {
+    ...idkitResponse,
+    merkle_root:
+      idkitResponse.merkle_root ||
+      idkitResponse.root ||
+      legacyResponse.merkle_root ||
+      legacyResponse.root,
+    nullifier_hash:
+      idkitResponse.nullifier_hash ||
+      idkitResponse.nullifier ||
+      legacyResponse.nullifier_hash ||
+      legacyResponse.nullifier,
+    proof: idkitResponse.proof || legacyResponse.proof,
+    action: WORLD_ID_ACTION,
+    verification_level: idkitResponse.verification_level || "device",
+  };
+  delete v2Payload.environment;
+  delete v2Payload.responses;
+  delete v2Payload.root;
+  delete v2Payload.nullifier;
+
+  const missingFields = ["merkle_root", "nullifier_hash", "proof"].filter(
+    (field) => !v2Payload[field],
+  );
+  if (missingFields.length > 0) {
+    return {
+      verified: false,
+      result: {
+        code: "invalid_legacy_proof",
+        detail: `Missing legacy proof field(s): ${missingFields.join(", ")}`,
+      },
+      endpoint: "v2",
+    };
+  }
+
+  let lastResult = null;
+  for (const baseUrl of WORLD_ID_V2_VERIFY_BASE_URLS) {
+    const verifyRes = await fetch(
+      `${baseUrl}/api/v2/verify/${encodeURIComponent(appId)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(v2Payload),
+      },
+    );
+    const result = await verifyRes.json().catch(() => ({}));
+    lastResult = result;
+
+    if (verifyRes.ok && result.success !== false && !result.code && !result.error) {
+      return { verified: true, result, endpoint: "v2" };
+    }
+  }
+
+  return { verified: false, result: lastResult, endpoint: "v2" };
+}
+
 function loadState() {
   try {
     if (!fs.existsSync(STATE_FILE)) return null;
@@ -206,6 +381,9 @@ async function init() {
     Object.assign(apiKeys, saved.apiKeys || {});
     walletProfiles = saved.walletProfiles || {};
     secondaryListings = saved.secondaryListings || [];
+    if (normalizePlanSupplyState()) {
+      saveState();
+    }
 
     console.log(`   ✅ Alice: ${users["alice"].accountId}`);
     console.log(`   ✅ Bob: ${users["bob"].accountId}`);
@@ -253,6 +431,7 @@ async function init() {
     plan1.apiEndpoint =
       "https://api.coingecko.com/api/v3/simple/price?ids={query}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true";
     plan1.description = "Real-time crypto prices, market cap, 24h changes";
+    plan1.remainingSupply = plan1.totalSupply;
     plans[plan1.tokenId] = plan1;
 
     const plan2 = await createAccessPlan({
@@ -265,6 +444,7 @@ async function init() {
     plan2.apiEndpoint =
       "https://geocoding-api.open-meteo.com/v1/search?name={query}&count=1";
     plan2.description = "Global weather data for any city";
+    plan2.remainingSupply = plan2.totalSupply;
     plans[plan2.tokenId] = plan2;
 
     saveState();
@@ -284,6 +464,7 @@ app.post("/api/plans", async (req, res) => {
     plan.ensName = req.body.ensName || "";
     plan.apiEndpoint = req.body.apiEndpoint || "";
     plan.description = req.body.description || "";
+    plan.remainingSupply = plan.totalSupply;
     plans[plan.tokenId] = plan;
     console.log(`   📡 API endpoint: ${plan.apiEndpoint || "none"}`);
     res.json(plan);
@@ -480,6 +661,37 @@ app.post("/api/buy", async (req, res) => {
     const walletAccountId = requireWalletAccountId(req, res);
     if (!walletAccountId) return;
     const { accountId: providerAccountId } = getClient();
+    const plan = plans[tokenId];
+    const purchaseAmount = Number(amount);
+    const unitPriceHbar = Number(pricePerTokenHbar);
+    const currentSupply = Number(plan?.remainingSupply ?? plan?.availableSupply ?? plan?.totalSupply ?? 0);
+
+    if (!plan) {
+      return res.status(404).json({ error: "Plan not found" });
+    }
+
+    if (!Number.isFinite(purchaseAmount) || purchaseAmount <= 0) {
+      return res.status(400).json({
+        error: "INVALID_AMOUNT",
+        message: "Choose at least 1 API call to buy.",
+      });
+    }
+
+    if (!Number.isFinite(unitPriceHbar) || unitPriceHbar <= 0) {
+      return res.status(400).json({
+        error: "INVALID_PRICE",
+        message: "This API has an invalid HBAR price.",
+      });
+    }
+
+    if (purchaseAmount > currentSupply) {
+      return res.status(400).json({
+        error: "INSUFFICIENT_SUPPLY",
+        message: `Only ${currentSupply} ${plan.symbol} tokens are available.`,
+      });
+    }
+
+    await ensureDemoBuyerFunding(purchaseAmount * unitPriceHbar);
 
     // Associate user with token (ignore error if already associated)
     try {
@@ -493,13 +705,15 @@ app.post("/api/buy", async (req, res) => {
       buyerPrivateKey: demoUser.privateKey,
       providerAccountId,
       tokenId,
-      amount,
-      pricePerTokenHbar,
+      amount: purchaseAmount,
+      pricePerTokenHbar: unitPriceHbar,
     });
 
-    updateWalletBalance(walletAccountId, tokenId, Number(amount));
+    updateWalletBalance(walletAccountId, tokenId, purchaseAmount);
+    plan.remainingSupply = Math.max(0, currentSupply - purchaseAmount);
+    plans[tokenId] = plan;
     saveState();
-    res.json({ ...result, walletState: getWalletState(walletAccountId) });
+    res.json({ ...result, plan, walletState: getWalletState(walletAccountId) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -582,6 +796,8 @@ app.post("/api/marketplace/buy", async (req, res) => {
       walletAccountId,
       tokenId,
       planName: plans[tokenId]?.name || "Unknown",
+      tokensRemaining: Number(result.amount || 0),
+      createdAt: new Date().toISOString(),
     };
     result.apiKey = apiKey;
     result.apiKeyInfo = {
@@ -642,6 +858,10 @@ app.post("/api/marketplace/buy", async (req, res) => {
 // });
 
 app.post("/api/verify-worldid-demo-disabled", async (req, res) => {
+  return res.status(410).json({
+    verified: false,
+    error: "Demo bypass removed. Use /api/verify-worldid.",
+  });
   try {
     console.log("✅ World ID verification received");
     // For hackathon demo: accept the proof
@@ -657,7 +877,7 @@ app.post("/api/rp-signature", async (req, res) => {
   try {
     const { sig, nonce, createdAt, expiresAt } = signRequest({
       signingKeyHex: process.env.WORLD_SIGNING_KEY,
-      action: "marketplace-verify",
+      action: WORLD_ID_ACTION,
     });
     res.json({
       sig,
@@ -665,6 +885,9 @@ app.post("/api/rp-signature", async (req, res) => {
       created_at: createdAt,
       expires_at: expiresAt,
       rp_id: process.env.WORLD_RP_ID,
+      app_id: WORLD_ID_APP_ID || null,
+      action: WORLD_ID_ACTION,
+      environment: WORLD_ID_ENVIRONMENT,
     });
   } catch (err) {
     console.error(err);
@@ -675,23 +898,88 @@ app.post("/api/rp-signature", async (req, res) => {
 // Verify World ID proof
 app.post("/api/verify-worldid", async (req, res) => {
   try {
-    const { rp_id, idkitResponse } = req.body;
-    const verifyRes = await fetch(
-      `https://developer.world.org/api/v4/verify/${rp_id}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(idkitResponse),
-      },
-    );
-    const result = await verifyRes.json();
-    if (verifyRes.ok) {
+    const { idkitResponse } = req.body || {};
+    const rpId = process.env.WORLD_RP_ID || req.body?.rp_id;
+    const appId = WORLD_ID_APP_ID || req.body?.app_id || idkitResponse?.app_id;
+
+    if (!rpId) {
+      return res.status(500).json({
+        verified: false,
+        error: "WORLD_RP_ID is not configured on the backend.",
+      });
+    }
+
+    if (!idkitResponse || typeof idkitResponse !== "object") {
+      return res.status(400).json({
+        verified: false,
+        error: "Missing World ID proof payload.",
+      });
+    }
+
+    const proofPayload = {
+      ...idkitResponse,
+      action: WORLD_ID_ACTION,
+      environment: idkitResponse.environment || WORLD_ID_ENVIRONMENT,
+    };
+    let verification = await verifyWorldIdV4Proof({
+      verifierId: rpId,
+      proofPayload,
+    });
+    let result = verification.result || {};
+    let verificationEndpoint = verification.endpoint;
+    let successfulResult = verification.successfulResult;
+    let verified = verification.verified;
+
+    if (!verified && appId && result.code === "app_not_migrated") {
+      verification = await verifyWorldIdV4Proof({
+        verifierId: appId,
+        proofPayload,
+      });
+      result = verification.result || {};
+      verificationEndpoint = verification.endpoint;
+      successfulResult = verification.successfulResult;
+      verified = verification.verified;
+    }
+
+    if (!verified && result.code === "app_not_migrated") {
+      if (!appId) {
+        return res.status(400).json({
+          verified: false,
+          error:
+            "World app is not migrated to v4, and WORLD_APP_ID/app_id was not provided for v2 verification.",
+        });
+      }
+
+      const v2Verification = await verifyWorldIdV2Proof({
+        appId,
+        idkitResponse,
+      });
+      result = v2Verification.result || {};
+      verificationEndpoint = v2Verification.endpoint;
+      successfulResult = null;
+      verified = v2Verification.verified;
+    }
+
+    if (verified) {
       console.log("✅ World ID verified!");
-      res.json({ verified: true });
+      res.json({
+        verified: true,
+        nullifier_hash:
+          result.nullifier_hash ||
+          result.nullifier ||
+          successfulResult?.nullifier ||
+          null,
+        action: result.action || WORLD_ID_ACTION,
+        environment: result.environment || WORLD_ID_ENVIRONMENT,
+        session_id: result.session_id || null,
+        verification_endpoint: verificationEndpoint,
+      });
     } else {
-      res.json({ verified: false, error: result });
+      console.log("World ID verification failed:", result);
+      res.status(400).json({ verified: false, error: result });
     }
   } catch (err) {
+    console.error(err);
     res.status(500).json({ verified: false, error: err.message });
   }
 });
@@ -827,6 +1115,8 @@ app.post("/api/generate-key", async (req, res) => {
     walletAccountId,
     tokenId,
     planName: plan?.name || "Unknown",
+    tokensRemaining: Number(profile.tokenBalances[tokenId] || 0),
+    createdAt: new Date().toISOString(),
   };
 
   console.log(`   🔑 API key generated: ${apiKey} → ${plan?.name}`);
@@ -893,20 +1183,29 @@ app.post("/v1/call", async (req, res) => {
   }
 
   // Check token balance
-  const balance = await getTokenBalance(
+  const keyAccountId =
     typeof keyData.accountId === "string"
       ? AccountId.fromString(keyData.accountId)
-      : keyData.accountId,
-    keyData.tokenId,
-  );
+      : keyData.accountId;
+  const keyPrivateKey =
+    typeof keyData.privateKey === "string"
+      ? PrivateKey.fromStringED25519(keyData.privateKey)
+      : keyData.privateKey;
+  const balance = keyData.walletAccountId
+    ? getWalletTokenBalance(keyData.walletAccountId, keyData.tokenId)
+    : await getTokenBalance(keyAccountId, keyData.tokenId);
   console.log(
     `   🔍 Debug: key=${apiKey}, accountId=${keyData.accountId}, tokenId=${keyData.tokenId}, balance=${balance}`,
   );
 
   if (balance <= 0) {
+    keyData.tokensRemaining = 0;
+    keyData.lastRejectedAt = new Date().toISOString();
+    saveState();
     return res.status(403).json({
       error: "NO_TOKENS_REMAINING",
-      message: "You have 0 tokens. Purchase more at AccessMint marketplace.",
+      message:
+        "This API key has 0 calls remaining. Buy more access to reactivate it.",
       tokens_remaining: 0,
       marketplace: "http://localhost:5173/marketplace",
     });
@@ -921,14 +1220,8 @@ app.post("/v1/call", async (req, res) => {
   // Burn 1 token
   const { accountId: providerAccountId } = getClient();
   await redeemToken({
-    userAccountId:
-      typeof keyData.accountId === "string"
-        ? AccountId.fromString(keyData.accountId)
-        : keyData.accountId,
-    userPrivateKey:
-      typeof keyData.privateKey === "string"
-        ? PrivateKey.fromStringED25519(keyData.privateKey)
-        : keyData.privateKey,
+    userAccountId: keyAccountId,
+    userPrivateKey: keyPrivateKey,
     providerAccountId,
     tokenId: keyData.tokenId,
     topicId: redemptionTopicId,
@@ -988,8 +1281,10 @@ app.post("/v1/call", async (req, res) => {
 
   const newBalance = keyData.walletAccountId
     ? updateWalletBalance(keyData.walletAccountId, keyData.tokenId, -1)
-    : await getTokenBalance(keyData.accountId, keyData.tokenId);
-  if (keyData.walletAccountId) saveState();
+    : await getTokenBalance(keyAccountId, keyData.tokenId);
+  keyData.tokensRemaining = newBalance;
+  keyData.lastUsedAt = new Date().toISOString();
+  saveState();
 
   res.json({
     service: plan?.name,

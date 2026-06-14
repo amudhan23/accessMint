@@ -3,15 +3,17 @@ import {
   Check,
   Clipboard,
   ExternalLink,
-  Flame,
+  FileCheck2,
   KeyRound,
   Loader2,
+  Network,
   PackageOpen,
+  ShieldCheck,
   Tag,
   WalletCards,
   X,
 } from "lucide-react";
-import { ENSIdentity } from "../components/ENSIntegration";
+import { ENSIdentity, ENSProfileLink } from "../components/ENSIntegration";
 
 function ApiKeyPanel({ credential }) {
   const [copied, setCopied] = useState(false);
@@ -47,6 +49,88 @@ function ApiKeyPanel({ credential }) {
           </p>
           <p>Authorization: Bearer {key}</p>
           <p>Content-Type: application/json</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HederaProofPanel({ plan, credential, balance }) {
+  const [open, setOpen] = useState(false);
+  const tokenUrl = `https://hashscan.io/testnet/token/${plan.tokenId}`;
+  const topicUrl = credential?.verified_on || "https://hashscan.io/testnet";
+  const key = credential?.apiKey || credential?.key;
+
+  return (
+    <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10">
+      <button
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+      >
+        <span className="inline-flex items-center gap-2 text-sm font-semibold text-cyan-100">
+          <ShieldCheck className="h-4 w-4 text-cyan-300" />
+          Hedera Proof
+        </span>
+        <span className="text-xs font-medium text-cyan-300">
+          {open ? "Hide details" : "View audit trail"}
+        </span>
+      </button>
+
+      {open && (
+        <div className="border-t border-cyan-500/15 px-4 pb-4 pt-1">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border border-gray-800 bg-gray-950 p-3">
+              <p className="text-xs text-gray-500">Access token</p>
+              <a
+                href={tokenUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 inline-flex items-center gap-1 font-mono text-sm text-cyan-200 hover:text-white"
+              >
+                {plan.tokenId} <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+            <div className="rounded-lg border border-gray-800 bg-gray-950 p-3">
+              <p className="text-xs text-gray-500">Remaining balance</p>
+              <p className="mt-1 text-sm font-semibold text-white">
+                {balance} {plan.symbol} calls
+              </p>
+            </div>
+            <div className="rounded-lg border border-gray-800 bg-gray-950 p-3">
+              <p className="text-xs text-gray-500">Provider identity</p>
+              <div className="mt-1">
+                {plan.ensName ? (
+                  <ENSProfileLink ensName={plan.ensName} />
+                ) : (
+                  <ENSIdentity address={plan.providerAddress} />
+                )}
+              </div>
+            </div>
+            <div className="rounded-lg border border-gray-800 bg-gray-950 p-3">
+              <p className="text-xs text-gray-500">Consensus proof</p>
+              <a
+                href={topicUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-cyan-200 hover:text-white"
+              >
+                HCS audit trail <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+          </div>
+
+          <div className="mt-3 rounded-lg border border-gray-800 bg-gray-950 p-3">
+            <div className="mb-2 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+              <Network className="h-3.5 w-3.5" />
+              API credential
+            </div>
+            <div className="grid gap-2 text-xs text-gray-400 sm:grid-cols-[90px_1fr]">
+              <span>Endpoint</span>
+              <code className="truncate text-gray-200">{credential?.endpoint || "Not generated"}</code>
+              <span>Bearer key</span>
+              <code className="truncate text-gray-200">{key || "Not generated"}</code>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -250,11 +334,16 @@ export default function UserPage({
 
                 <div className="mt-5 space-y-4">
                   <ApiKeyPanel credential={apiKeys[plan.tokenId]} />
+                  <HederaProofPanel
+                    plan={plan}
+                    credential={apiKeys[plan.tokenId]}
+                    balance={balance}
+                  />
 
                   <div className="rounded-xl border border-gray-800 bg-gray-950 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div className="inline-flex items-center gap-2">
-                        <Flame className="h-4 w-4 text-orange-400" />
+                        <FileCheck2 className="h-4 w-4 text-orange-400" />
                         <h4 className="font-semibold text-white">Try it</h4>
                       </div>
                       <span className="text-xs text-gray-500">{balance} calls remaining</span>
@@ -350,16 +439,32 @@ export default function UserPage({
                   className="h-11 w-full rounded-xl border border-gray-800 bg-gray-900 px-4 text-sm text-white outline-none transition focus:border-purple-500"
                 />
               </label>
-              <label className="space-y-1.5">
-                <span className="text-sm text-gray-400">Price per token (HBAR)</span>
+              <label className="space-y-1.5 rounded-2xl border border-purple-500/20 bg-purple-500/10 p-3">
+                <span className="text-sm font-semibold text-purple-100">Listing price</span>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={sellPrice}
                   onChange={(event) => setSellPrice(Number(event.target.value))}
-                  className="h-11 w-full rounded-xl border border-gray-800 bg-gray-900 px-4 text-sm text-white outline-none transition focus:border-purple-500"
+                  className="mt-2 h-11 w-full rounded-xl border border-purple-500/20 bg-gray-950 px-4 text-sm text-white outline-none transition focus:border-purple-400"
                 />
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {[0.6, 0.75, 0.9].map((multiplier) => (
+                    <button
+                      key={multiplier}
+                      type="button"
+                      onClick={() =>
+                        setSellPrice(
+                          Number((sellPlan.pricePerTokenHbar * multiplier).toFixed(2)),
+                        )
+                      }
+                      className="rounded-lg border border-purple-500/15 bg-gray-950 px-2 py-1.5 text-xs font-semibold text-purple-200 transition hover:border-purple-400/50"
+                    >
+                      {Math.round((1 - multiplier) * 100)}% off
+                    </button>
+                  ))}
+                </div>
               </label>
             </div>
 

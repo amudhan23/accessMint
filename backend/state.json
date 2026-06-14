@@ -4,7 +4,7 @@
       "accountId": "0.0.9225296",
       "privateKey": "45c1f1519f8e8dc2f52f58b1798cf3f00a3bf8567ad1f2e4d3fe7fb25b3e3efe",
       "name": "Alice",
-      "walletAddress": "0.0.9227049"
+      "walletAddress": "0.0.9226336"
     },
     "bob": {
       "accountId": "0.0.9225297",
@@ -23,7 +23,8 @@
       "provider": "0.0.9185969",
       "ensName": "cryptointel.eth",
       "apiEndpoint": "https://api.coingecko.com/api/v3/simple/price?ids={query}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true",
-      "description": "Real-time crypto prices, market cap, 24h changes"
+      "description": "Real-time crypto prices, market cap, 24h changes",
+      "remainingSupply": 43
     },
     "0.0.9225299": {
       "tokenId": "0.0.9225299",
@@ -34,7 +35,8 @@
       "provider": "0.0.9185969",
       "ensName": "weatherapi.eth",
       "apiEndpoint": "https://geocoding-api.open-meteo.com/v1/search?name={query}&count=1",
-      "description": "Global weather data for any city"
+      "description": "Global weather data for any city",
+      "remainingSupply": 49
     }
   },
   "apiKeys": {
@@ -969,6 +971,69 @@
       "walletAccountId": "0.0.9227049",
       "tokenId": "0.0.9225298",
       "planName": "Crypto Price Intelligence"
+    },
+    "ak_hz63hnat0q7": {
+      "accountId": "0.0.9225296",
+      "privateKey": "45c1f1519f8e8dc2f52f58b1798cf3f00a3bf8567ad1f2e4d3fe7fb25b3e3efe",
+      "walletAccountId": "0.0.9226336",
+      "tokenId": "0.0.9225298",
+      "planName": "Crypto Price Intelligence"
+    },
+    "ak_u1jnvamvj68": {
+      "accountId": "0.0.9225296",
+      "privateKey": "45c1f1519f8e8dc2f52f58b1798cf3f00a3bf8567ad1f2e4d3fe7fb25b3e3efe",
+      "walletAccountId": "0.0.9226336",
+      "tokenId": "0.0.9225298",
+      "planName": "Crypto Price Intelligence"
+    },
+    "ak_lthf58x5b0e": {
+      "accountId": "0.0.9225296",
+      "privateKey": "45c1f1519f8e8dc2f52f58b1798cf3f00a3bf8567ad1f2e4d3fe7fb25b3e3efe",
+      "walletAccountId": "0.0.9227049",
+      "tokenId": "0.0.9225298",
+      "planName": "Crypto Price Intelligence",
+      "tokensRemaining": 0,
+      "lastRejectedAt": "2026-06-14T01:26:32.505Z"
+    },
+    "ak_b522bq9nah6": {
+      "accountId": "0.0.9225296",
+      "privateKey": "45c1f1519f8e8dc2f52f58b1798cf3f00a3bf8567ad1f2e4d3fe7fb25b3e3efe",
+      "walletAccountId": "0.0.9226336",
+      "tokenId": "0.0.9225298",
+      "planName": "Crypto Price Intelligence",
+      "tokensRemaining": 2,
+      "createdAt": "2026-06-14T01:30:56.689Z"
+    },
+    "ak_psajxdzud3": {
+      "accountId": "0.0.9225296",
+      "privateKey": "45c1f1519f8e8dc2f52f58b1798cf3f00a3bf8567ad1f2e4d3fe7fb25b3e3efe",
+      "walletAccountId": "0.0.9227049",
+      "tokenId": "0.0.9225298",
+      "planName": "Crypto Price Intelligence",
+      "tokensRemaining": 0,
+      "createdAt": "2026-06-14T01:31:53.030Z",
+      "lastUsedAt": "2026-06-14T01:32:14.140Z",
+      "lastRejectedAt": "2026-06-14T01:32:25.085Z"
+    },
+    "ak_jpdv5otfx8": {
+      "accountId": "0.0.9225296",
+      "privateKey": "45c1f1519f8e8dc2f52f58b1798cf3f00a3bf8567ad1f2e4d3fe7fb25b3e3efe",
+      "walletAccountId": "0.0.9227049",
+      "tokenId": "0.0.9225298",
+      "planName": "Crypto Price Intelligence",
+      "tokensRemaining": 0,
+      "createdAt": "2026-06-14T01:34:03.066Z",
+      "lastUsedAt": "2026-06-14T01:34:21.653Z",
+      "lastRejectedAt": "2026-06-14T01:34:35.877Z"
+    },
+    "ak_sfyilga7obd": {
+      "accountId": "0.0.9225296",
+      "privateKey": "45c1f1519f8e8dc2f52f58b1798cf3f00a3bf8567ad1f2e4d3fe7fb25b3e3efe",
+      "walletAccountId": "0.0.9227049",
+      "tokenId": "0.0.9225298",
+      "planName": "Crypto Price Intelligence",
+      "tokensRemaining": 1,
+      "createdAt": "2026-06-14T01:56:13.776Z"
     }
   },
   "walletProfiles": {
@@ -980,18 +1045,18 @@
       },
       "apiKeys": {
         "0.0.9225298": {
-          "apiKey": "ak_l1k6nw66j",
+          "apiKey": "ak_b522bq9nah6",
           "service": "Crypto Price Intelligence",
           "endpoint": "http://localhost:3001/v1/call",
           "method": "POST",
           "headers": {
-            "Authorization": "Bearer ak_l1k6nw66j",
+            "Authorization": "Bearer ak_b522bq9nah6",
             "Content-Type": "application/json"
           },
           "body": {
             "query": "bitcoin"
           },
-          "example_curl": "curl -X POST http://localhost:3001/v1/call -H \"Authorization: Bearer ak_l1k6nw66j\" -H \"Content-Type: application/json\" -d '{\"query\":\"bitcoin\"}'"
+          "example_curl": "curl -X POST http://localhost:3001/v1/call -H \"Authorization: Bearer ak_b522bq9nah6\" -H \"Content-Type: application/json\" -d '{\"query\":\"bitcoin\"}'"
         },
         "0.0.9225299": {
           "apiKey": "ak_fuihui5nz2w",
@@ -1009,7 +1074,7 @@
         }
       },
       "createdAt": "2026-06-13T21:56:49.694Z",
-      "updatedAt": "2026-06-13T22:41:46.690Z"
+      "updatedAt": "2026-06-14T01:32:58.373Z"
     },
     "0.0.9227049": {
       "accountId": "0.0.9227049",
@@ -1018,13 +1083,22 @@
       },
       "apiKeys": {
         "0.0.9225298": {
-          "key": "ak_pk580i70qy",
+          "apiKey": "ak_sfyilga7obd",
+          "service": "Crypto Price Intelligence",
           "endpoint": "http://localhost:3001/v1/call",
-          "usage": "Authorization: Bearer ak_pk580i70qy"
+          "method": "POST",
+          "headers": {
+            "Authorization": "Bearer ak_sfyilga7obd",
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "query": "bitcoin"
+          },
+          "example_curl": "curl -X POST http://localhost:3001/v1/call -H \"Authorization: Bearer ak_sfyilga7obd\" -H \"Content-Type: application/json\" -d '{\"query\":\"bitcoin\"}'"
         }
       },
       "createdAt": "2026-06-13T23:28:44.245Z",
-      "updatedAt": "2026-06-13T23:29:59.555Z"
+      "updatedAt": "2026-06-14T01:56:21.846Z"
     }
   },
   "secondaryListings": [
@@ -1040,6 +1114,45 @@
       "retailPrice": 0.1,
       "ensName": "cryptointel.eth",
       "walletAccountId": "0.0.9226336"
+    },
+    {
+      "id": 1,
+      "seller": "0.0.9225296",
+      "tokenId": "0.0.9225298",
+      "amount": 1,
+      "pricePerTokenHbar": 0.09,
+      "active": false,
+      "createdAt": "2026-06-14T01:10:22.007Z",
+      "symbol": "CRYPTO",
+      "retailPrice": 0.1,
+      "ensName": "cryptointel.eth",
+      "walletAccountId": "0.0.9226336"
+    },
+    {
+      "id": 1,
+      "seller": "0.0.9225296",
+      "tokenId": "0.0.9225298",
+      "amount": 1,
+      "pricePerTokenHbar": 0.07,
+      "active": false,
+      "createdAt": "2026-06-14T01:32:56.270Z",
+      "symbol": "CRYPTO",
+      "retailPrice": 0.1,
+      "ensName": "cryptointel.eth",
+      "walletAccountId": "0.0.9226336"
+    },
+    {
+      "id": 1,
+      "seller": "0.0.9225296",
+      "tokenId": "0.0.9225298",
+      "amount": 1,
+      "pricePerTokenHbar": 0.07,
+      "active": true,
+      "createdAt": "2026-06-14T01:56:19.778Z",
+      "symbol": "CRYPTO",
+      "retailPrice": 0.1,
+      "ensName": "cryptointel.eth",
+      "walletAccountId": "0.0.9227049"
     }
   ]
 }
